@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+.env
+
+# Node.js
+node_modules/
+dist/
+build/
+.next/
+
+# Project specific
+uploads/
+faiss_index.index
+faiss_index.meta
+scratch/
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
