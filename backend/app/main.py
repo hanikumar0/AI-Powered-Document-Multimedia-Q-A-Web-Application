@@ -1,10 +1,22 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from contextlib import asynccontextmanager
 from .api import upload, chat, auth
 from .db.mongodb import connect_to_mongo, close_mongo_connection
 
-app = FastAPI(title="AI Document & Multimedia Q&A API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    await connect_to_mongo()
+    yield
+    # Shutdown logic
+    await close_mongo_connection()
+
+app = FastAPI(
+    title="AI Document & Multimedia Q&A API",
+    lifespan=lifespan
+)
 
 # Configure CORS
 app.add_middleware(
@@ -14,14 +26,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.on_event("startup")
-async def startup_db_client():
-    await connect_to_mongo()
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    await close_mongo_connection()
 
 app.include_router(upload.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
@@ -36,4 +40,5 @@ async def health_check():
     return {"status": "healthy"}
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # Use app.main:app to ensure uvicorn finds the module correctly when run from backend root
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
