@@ -8,10 +8,12 @@ import Header from '@/components/layout/Header';
 import ChatWorkspace from '@/components/chat/ChatWorkspace';
 import FileUpload from '@/components/upload/FileUpload';
 import { useFileStore } from '@/store/fileStore';
+import { useChatStore } from '@/store/chatStore';
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const { files, fetchFiles, isLoading, setSelectedFile } = useFileStore();
+  const { createSession, attachFilesToActiveSession } = useChatStore();
 
   useEffect(() => {
     fetchFiles();
@@ -92,8 +94,9 @@ export default function Dashboard() {
                             </div>
                           </div>
                           <button 
-                            onClick={() => {
-                              setSelectedFile(file);
+                            onClick={async () => {
+                              const session = await createSession(file.filename);
+                              await attachFilesToActiveSession([file.file_id]);
                               setActiveTab('chats');
                             }}
                             className="text-xs px-4 py-2 rounded-lg bg-[#1F2937] hover:bg-[#1F2937]/80 text-gray-400 hover:text-white transition-colors"

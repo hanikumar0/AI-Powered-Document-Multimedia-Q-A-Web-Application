@@ -1,162 +1,186 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Send, User, Bot, Paperclip, Clock, FileText } from 'lucide-react';
-import { chatService } from '@/services/chatService';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Send, 
+  User, 
+  Bot, 
+  Paperclip, 
+  Clock, 
+  FileText, 
+  Plus, 
+  Upload, 
+  FilePlus, 
+  X,
+  Loader2,
+  ChevronDown
+} from 'lucide-react';
 import { fileService } from '@/services/fileService';
 import { useFileStore } from '@/store/fileStore';
-
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: string;
-  sources?: { filename: string; timestamp?: string }[];
-}
+import { useChatStore } from '@/store/chatStore';
+import { chatService } from '@/services/chatService';
+import FileAttachmentModal from './FileAttachmentModal';
 
 export default function ChatWorkspace() {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const { selectedFile, setSelectedFile, addFile, files } = useFileStore();
-  const [isAttaching, setIsAttaching] = useState(false);
-
-  const [messages, setMessages] = useState<Message[]>([
-    { 
-      role: 'assistant', 
-      content: "Hello! I'm your AI assistant. You can chat with me normally, or upload documents and media to enable specialized file-intelligence.", 
-      timestamp: new Date().toLocaleTimeString() 
-    }
-  ]);
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (selectedFile) {
-      const welcomeMsg: Message = {
-        role: 'assistant',
-        content: `I've loaded your file: **${selectedFile.filename}**. 
-
-How can I help you with this ${selectedFile.type || 'document'}? I can summarize it, answer specific questions, or help you find details.`,
-        timestamp: new Date().toLocaleTimeString()
-      };
-      setMessages([welcomeMsg]);
-      // Optional: Clear selection after loading so it doesn't re-trigger on remount 
-      // unless that's desired behavior. Let's keep it for now.
-    }
-  }, [selectedFile]);
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsAttaching(true);
-    try {
-      const uploadedData = await fileService.upload(file);
-      addFile(uploadedData);
-      setSelectedFile(uploadedData);
-      
-      const systemMsg: Message = {
-        role: 'assistant',
-        content: `Attached and processed: **${file.name}**. I'm ready to answer questions about it!`,
-        timestamp: new Date().toLocaleTimeString()
-      };
-      setMessages(prev => [...prev, systemMsg]);
-    } catch (error) {
-      console.error('Attachment error:', error);
-      const errorMsg: Message = {
-        role: 'assistant',
-        content: `Sorry, I couldn't attach **${file.name}**. Please try again.`,
-        timestamp: new Date().toLocaleTimeString()
-      };
-      setMessages(prev => [...prev, errorMsg]);
-    } finally {
-      setIsAttaching(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const { files } = useFileStore();
+  const { 
+    activeSession, 
+    messages, 
+    isLoading, 
+    addMessage, 
+    attachFilesToActiveSession,
+    fetchSessions
+  } = useChatStore();
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !activeSession) return;
 
-    const userMsg: Message = { 
+    const userMsg: any = { 
       role: 'user', 
       content: input, 
-      timestamp: new Date().toLocaleTimeString() 
+      timestamp: new Date().toISOString() 
     };
     
-    setMessages((prev: Message[]) => [...prev, userMsg]);
+    addMessage(userMsg);
     setInput('');
-    setIsLoading(true);
 
     try {
-      const response = await chatService.sendMessage(input, selectedFile?.file_id);
-      const aiMsg: Message = {
-        role: 'assistant',
-        content: response.answer,
-        timestamp: new Date().toLocaleTimeString(),
-        sources: response.sources
-      };
-      setMessages((prev: Message[]) => [...prev, aiMsg]);
+      const response = await chatService.sendMessage(input, activeSession.id);
+      addMessage(response);
+      fetchSessions(); // Refresh to update session order/titles
     } catch (error: any) {
-      const errMsg: Message = {
+      console.error('Chat error:', error);
+      addMessage({
         role: 'assistant',
         content: "I'm sorry, I encountered an error processing your request. Please try again later.",
-        timestamp: new Date().toLocaleTimeString()
-      };
-      setMessages((prev: Message[]) => [...prev, errMsg]);
-    } finally {
-      setIsLoading(false);
+        timestamp: new Date().toISOString()
+      });
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeSession) return;
+
+    setIsUploading(true);
+    try {
+      const uploadedData = await fileService.upload(file);
+      await attachFilesToActiveSession([uploadedData.file_id]);
+      
+      addMessage({
+        role: 'assistant',
+        content: `Uploaded and attached: **${file.name}**. I'm analyzing it now!`,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Upload error:', error);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const getAttachedFiles = () => {
+    if (!activeSession) return [];
+    return files.filter(f => activeSession.file_ids.includes(f.file_id));
+  };
+
+  if (!activeSession) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-[#0B0F19] text-center p-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md space-y-6"
+        >
+          <div className="w-20 h-20 bg-purple-600/20 rounded-3xl flex items-center justify-center mx-auto border border-purple-500/20">
+            <MessageSquare className="w-10 h-10 text-purple-500" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold text-white">Select a conversation</h2>
+            <p className="text-gray-400">Choose a chat from the sidebar or start a new one to begin exploring your documents.</p>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-full bg-[#0B0F19]">
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {files.length === 0 && messages.length === 1 && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-col items-center justify-center py-20 text-center space-y-6"
+    <div className="flex-1 flex flex-col h-full bg-[#0B0F19] relative overflow-hidden">
+      {/* Header */}
+      <div className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-[#0B0F19]/50 backdrop-blur-xl z-10">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-purple-600/20 flex items-center justify-center border border-purple-500/20">
+            <FileText className="w-4 h-4 text-purple-500" />
+          </div>
+          <h2 className="text-sm font-semibold text-white truncate max-w-[300px]">
+            {activeSession.title}
+          </h2>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex -space-x-2">
+            {getAttachedFiles().slice(0, 3).map((f, i) => (
+              <div key={i} className="w-6 h-6 rounded-full bg-[#1F2937] border-2 border-[#0B0F19] flex items-center justify-center">
+                <FileText className="w-3 h-3 text-purple-400" />
+              </div>
+            ))}
+            {getAttachedFiles().length > 3 && (
+              <div className="w-6 h-6 rounded-full bg-[#1F2937] border-2 border-[#0B0F19] flex items-center justify-center text-[8px] font-bold text-gray-400">
+                +{getAttachedFiles().length - 3}
+              </div>
+            )}
+          </div>
+          <button 
+            onClick={() => setIsAttachmentModalOpen(true)}
+            className="text-xs font-medium text-purple-400 hover:text-purple-300 transition-colors"
           >
-            <div className="w-20 h-20 rounded-3xl bg-[#1F2937] flex items-center justify-center border border-white/5">
-              <Bot className="w-10 h-10 text-purple-500" />
+            Manage Files
+          </button>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+        {messages.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-40 py-20">
+            <Bot className="w-16 h-16 text-purple-500" />
+            <div className="max-w-sm">
+              <h3 className="text-lg font-semibold text-white">How can I help you today?</h3>
+              <p className="text-sm mt-2">Upload or attach files to enable document-aware intelligence, or ask a general question.</p>
             </div>
-            <div className="max-w-md space-y-2">
-              <h3 className="text-xl font-bold text-white">Unlock Document Intelligence</h3>
-              <p className="text-gray-400 text-sm">
-                Upload PDFs, videos, or audio files to start chatting with your content. 
-                Until then, I'm happy to help with general questions!
-              </p>
-            </div>
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="px-6 py-3 bg-[#7C3AED] hover:bg-[#6D28D9] rounded-xl font-medium transition-all shadow-lg shadow-purple-500/20 flex items-center gap-2"
-            >
-              <Paperclip className="w-4 h-4" /> Upload First File
-            </button>
-          </motion.div>
+          </div>
         )}
-        {messages.map((msg: Message, i: number) => (
+        
+        {messages.map((msg, i) => (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             key={i}
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            <div className={`flex gap-4 max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-              <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center ${
-                msg.role === 'user' ? 'bg-purple-600' : 'bg-[#1F2937]'
+            <div className={`flex gap-6 max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+              <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center shadow-lg ${
+                msg.role === 'user' ? 'bg-[#7C3AED] shadow-purple-500/20' : 'bg-[#1F2937] border border-white/5'
               }`}>
                 {msg.role === 'user' ? <User className="w-5 h-5 text-white" /> : <Bot className="w-5 h-5 text-cyan-400" />}
               </div>
               
-              <div className="space-y-2">
-                <div className={`p-4 rounded-2xl ${
-                  msg.role === 'user' ? 'bg-[#7C3AED] text-white' : 'glass-card border border-white/5 text-gray-200'
+              <div className="space-y-3">
+                <div className={`p-5 rounded-3xl ${
+                  msg.role === 'user' 
+                    ? 'bg-[#7C3AED] text-white shadow-xl shadow-purple-500/10' 
+                    : 'bg-[#1F2937] border border-white/5 text-gray-200'
                 }`}>
                   <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                 </div>
@@ -164,83 +188,138 @@ How can I help you with this ${selectedFile.type || 'document'}? I can summarize
                 {msg.sources && msg.sources.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {msg.sources.map((source: any, j: number) => (
-                      <button key={j} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] hover:bg-cyan-500/20 transition-colors">
+                      <button key={j} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-500/5 border border-cyan-500/10 text-cyan-400 text-[10px] font-medium hover:bg-cyan-500/10 transition-all">
                         <Clock className="w-3 h-3" />
                         {source.filename} {source.timestamp && `@ ${source.timestamp}`}
                       </button>
                     ))}
                   </div>
                 )}
-                <p className="text-[10px] text-gray-500 px-1">{msg.timestamp}</p>
+                <p className="text-[10px] text-gray-500 font-medium px-2">
+                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </p>
               </div>
             </div>
           </motion.div>
         ))}
         {isLoading && (
-          <div className="flex gap-4">
-            <div className="w-10 h-10 rounded-xl bg-[#1F2937] flex items-center justify-center">
-              <Bot className="w-5 h-5 text-cyan-400 animate-pulse" />
-            </div>
-            <div className="glass-card p-4 rounded-2xl flex gap-1 items-center">
-              <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" />
-              <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:0.2s]" />
-              <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:0.4s]" />
+          <div className="flex justify-start">
+            <div className="flex gap-6">
+              <div className="w-10 h-10 rounded-2xl bg-[#1F2937] border border-white/5 flex items-center justify-center">
+                <Loader2 className="w-5 h-5 text-purple-500 animate-spin" />
+              </div>
+              <div className="bg-[#1F2937] border border-white/5 p-5 rounded-3xl">
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
             </div>
           </div>
         )}
         <div ref={scrollRef} />
       </div>
 
-      <div className="p-6 bg-[#111827]/50 border-t border-[#1F2937]">
-        {selectedFile && (
-          <div className="max-w-4xl mx-auto mb-4 flex items-center gap-2">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs">
-              <FileText className="w-3.5 h-3.5" />
-              <span className="font-medium truncate max-w-[200px]">{selectedFile.filename}</span>
-              <button 
-                onClick={() => setSelectedFile(null)}
-                className="ml-1 hover:text-white transition-colors"
+      {/* Input Area */}
+      <div className="p-8 pt-0">
+        <div className="max-w-4xl mx-auto">
+          {/* File Chips */}
+          <AnimatePresence>
+            {getAttachedFiles().length > 0 && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="flex flex-wrap gap-2 mb-4"
               >
-                ×
+                {getAttachedFiles().map(file => (
+                  <div key={file.file_id} className="flex items-center gap-2 px-3 py-1.5 bg-[#1F2937] border border-white/10 rounded-xl group transition-all hover:border-purple-500/50">
+                    <FileText className="w-3 h-3 text-purple-400" />
+                    <span className="text-[10px] font-medium text-gray-300 truncate max-w-[150px]">{file.filename}</span>
+                    <button className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-white/10 rounded transition-all text-gray-500 hover:text-red-400">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                <button 
+                  onClick={() => setIsAttachmentModalOpen(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-purple-600/10 border border-purple-500/20 rounded-xl text-purple-400 hover:bg-purple-600/20 transition-all"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span className="text-[10px] font-bold">Add More</span>
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="relative group">
+            <div className="absolute inset-0 bg-purple-600/10 blur-xl rounded-full opacity-0 group-focus-within:opacity-100 transition-opacity pointer-events-none" />
+            
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            
+            <div className="relative flex items-end gap-2 bg-[#1F2937]/80 backdrop-blur-xl border border-white/10 rounded-[28px] p-2 pr-4 focus-within:border-purple-500/50 transition-all shadow-2xl">
+              <div className="flex flex-col">
+                <button 
+                  onClick={() => setIsAttachmentModalOpen(true)}
+                  className="p-3 text-gray-400 hover:text-purple-400 transition-colors"
+                  title="Attach Existing File"
+                >
+                  <FilePlus className="w-6 h-6" />
+                </button>
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-3 text-gray-400 hover:text-purple-400 transition-colors"
+                  title="Upload New File"
+                >
+                  <Upload className="w-6 h-6" />
+                </button>
+              </div>
+
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder="Ask anything..."
+                rows={1}
+                className="flex-1 bg-transparent border-none focus:ring-0 text-white py-3 px-2 resize-none max-h-40 custom-scrollbar text-sm placeholder:text-gray-500"
+              />
+
+              <button 
+                onClick={handleSend}
+                disabled={!input.trim() || isLoading}
+                className={`p-3 rounded-2xl transition-all ${
+                  input.trim() && !isLoading 
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/40 hover:bg-purple-500 active:scale-95' 
+                    : 'bg-white/5 text-gray-600'
+                }`}
+              >
+                <Send className="w-6 h-6" />
               </button>
             </div>
           </div>
-        )}
-        <div className="max-w-4xl mx-auto relative">
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            className="hidden"
-            accept=".pdf,.doc,.docx,.txt,.mp3,.wav,.mp4"
-          />
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Ask a question about your files..."
-            disabled={isLoading || isAttaching}
-            className="w-full bg-[#1F2937] border border-[#374151] rounded-2xl pl-12 pr-16 py-4 text-sm focus:outline-none focus:border-purple-500 transition-all placeholder:text-gray-500 text-white disabled:opacity-50"
-          />
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isAttaching}
-            className={`absolute left-4 top-1/2 -translate-y-1/2 p-1.5 transition-colors ${
-              isAttaching ? 'text-purple-500 animate-spin' : 'text-gray-500 hover:text-purple-500'
-            }`}
-          >
-            <Paperclip className="w-5 h-5" />
-          </button>
-          <button 
-            onClick={handleSend}
-            disabled={isLoading}
-            className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white rounded-xl transition-all shadow-lg shadow-purple-500/20 disabled:opacity-50"
-          >
-            <Send className="w-4 h-4 text-white" />
-          </button>
+          <p className="text-center text-[10px] text-gray-600 mt-4 font-medium uppercase tracking-widest">
+            Gemini 2.0 Flash • Document Intelligence Workspace
+          </p>
         </div>
       </div>
+
+      <FileAttachmentModal 
+        isOpen={isAttachmentModalOpen} 
+        onClose={() => setIsAttachmentModalOpen(false)} 
+      />
     </div>
   );
 }
+
+import { MessageSquare } from 'lucide-react';

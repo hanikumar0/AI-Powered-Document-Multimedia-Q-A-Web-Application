@@ -9,11 +9,48 @@ const getAuthHeader = () => {
 };
 
 export const chatService = {
-  async sendMessage(message: string, fileId?: string) {
-    const response = await axios.post(`${API_URL}/chat/`, {
+  async getSessions() {
+    const response = await axios.get(`${API_URL}/chat/sessions`, {
+      headers: getAuthHeader(),
+    });
+    return response.data;
+  },
+
+  async createSession(title?: string) {
+    const response = await axios.post(`${API_URL}/chat/sessions`, { title }, {
+      headers: getAuthHeader(),
+    });
+    return response.data;
+  },
+
+  async getMessages(sessionId: string) {
+    const response = await axios.get(`${API_URL}/chat/sessions/${sessionId}/messages`, {
+      headers: getAuthHeader(),
+    });
+    return response.data;
+  },
+
+  async sendMessage(message: string, sessionId: string) {
+    const response = await axios.post(`${API_URL}/chat/message`, {
       message,
-      file_id: fileId
+      session_id: sessionId
     }, {
+      headers: getAuthHeader(),
+    });
+    return response.data;
+  },
+
+  async attachFiles(sessionId: string, fileIds: string[]) {
+    const response = await axios.post(`${API_URL}/chat/sessions/${sessionId}/files`, {
+      file_ids: fileIds
+    }, {
+      headers: getAuthHeader(),
+    });
+    return response.data;
+  },
+
+  async deleteSession(sessionId: string) {
+    const response = await axios.delete(`${API_URL}/chat/sessions/${sessionId}`, {
       headers: getAuthHeader(),
     });
     return response.data;

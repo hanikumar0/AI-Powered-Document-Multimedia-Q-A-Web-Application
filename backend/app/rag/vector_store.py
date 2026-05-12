@@ -25,7 +25,7 @@ class VectorStore:
         self.metadata.extend(metadatas)
         self.save()
 
-    def search(self, query: str, k=5):
+    def search(self, query: str, k=5, file_ids: list[str] = None):
         # Safety check: If index is empty, return empty results
         if not self.index or self.index.ntotal == 0:
             return []
@@ -37,15 +37,26 @@ class VectorStore:
                 
             query_embedding_np = np.array([query_embedding]).astype('float32')
             
-            distances, indices = self.index.search(query_embedding_np, k)
+            # Increase k slightly if we are filtering, to ensure we get enough relevant results
+            search_k = k * 2 if file_ids else k
+            distances, indices = self.index.search(query_embedding_np, search_k)
             
             results = []
             for i, idx in enumerate(indices[0]):
                 if idx != -1 and idx < len(self.metadata):
+                    meta = self.metadata[idx]
+                    
+                    # Filter by file_id if provided
+                    if file_ids and meta.get("file_id") not in file_ids:
+                        continue
+                        
                     results.append({
-                        "metadata": self.metadata[idx],
+                        "metadata": meta,
                         "score": float(distances[0][i])
                     })
+                    
+                    if len(results) >= k:
+                        break
             return results
         except Exception as e:
             print(f"Vector search error: {e}")
