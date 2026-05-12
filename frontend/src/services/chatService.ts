@@ -55,5 +55,54 @@ export const chatService = {
       headers: getAuthHeader(),
     });
     return response.data;
+  },
+
+  async sendMessageStreaming(message: string, sessionId: string, onChunk: (chunk: string) => void) {
+    const token = Cookies.get('auth-token');
+    
+    const response = await fetch(`${API_URL}/chat/message/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ message, session_id: sessionId })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let result = { id: '', sources: [] };
+
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === 'chunk') {
+                onChunk(data.content);
+              } else if (data.type === 'done') {
+                result = { id: data.id, sources: data.sources };
+              } else if (data.type === 'error') {
+                throw new Error(data.content);
+              }
+            } catch (e) {
+              console.error('Error parsing streaming chunk:', e);
+            }
+          }
+        }
+      }
+    }
+    return result;
   }
 };

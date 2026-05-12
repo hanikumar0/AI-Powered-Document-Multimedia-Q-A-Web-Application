@@ -36,13 +36,17 @@ export default function ChatWorkspace() {
     messages, 
     isLoading, 
     addMessage, 
+    updateMessage,
+    setIsLoading,
     attachFilesToActiveSession,
     fetchSessions
   } = useChatStore();
 
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [messages, isLoading]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading || !activeSession) return;
@@ -53,28 +57,45 @@ export default function ChatWorkspace() {
       timestamp: new Date().toISOString() 
     };
     
+    // Calculate index BEFORE adding user message
+    const assistantMessageIndex = messages.length + 1;
+    
     addMessage(userMsg);
     setInput('');
+    setIsLoading(true);
 
+    // Add empty placeholder for streaming assistant response
+    addMessage({
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString()
+    });
+
+    let fullContent = '';
     try {
-      const response = await chatService.sendMessage(input, activeSession.id);
-      addMessage(response);
-      fetchSessions(); // Refresh to update session order/titles
+      const result = await chatService.sendMessageStreaming(
+        input, 
+        activeSession.id,
+        (chunk) => {
+          fullContent += chunk;
+          updateMessage(assistantMessageIndex, fullContent);
+        }
+      );
+      
+      // Update with final content and sources
+      updateMessage(assistantMessageIndex, fullContent, result.sources);
+      setIsLoading(false);
+      fetchSessions();
     } catch (error: any) {
       console.error('Chat error:', error);
-      let errorMessage = "I'm sorry, I encountered an error processing your request.";
+      setIsLoading(false);
       
-      if (error.response?.status === 429) {
-        errorMessage = "Rate limit exceeded. The AI service is currently busy. Please wait about 30 seconds and try again.";
-      } else if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
+      let errorMessage = "I'm sorry, I encountered an error processing your request.";
+      if (error.message?.includes('429')) {
+        errorMessage = "Rate limit exceeded. Please wait a moment and try again.";
       }
-
-      addMessage({
-        role: 'assistant',
-        content: errorMessage,
-        timestamp: new Date().toISOString()
-      });
+      
+      updateMessage(assistantMessageIndex, errorMessage);
     }
   };
 
@@ -188,7 +209,12 @@ export default function ChatWorkspace() {
                     ? 'bg-purple-600 text-white shadow-xl shadow-purple-500/10' 
                     : 'bg-[#1E293B] border border-white/5 text-gray-200'
                 }`}>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                    {msg.content}
+                    {msg.role === 'assistant' && i === messages.length - 1 && isLoading && (
+                      <span className="inline-block w-1.5 h-4 ml-1 bg-purple-500 animate-pulse align-middle" />
+                    )}
+                  </p>
                 </div>
                 
                 {msg.sources && msg.sources.length > 0 && (
@@ -207,7 +233,7 @@ export default function ChatWorkspace() {
             </div>
           </motion.div>
         ))}
-        {isLoading && (
+        {isLoading && messages[messages.length - 1]?.content === '' && (
           <div className="flex justify-start">
             <div className="flex gap-6">
               <div className="w-10 h-10 rounded-2xl bg-[#1E293B] border border-white/5 flex items-center justify-center">

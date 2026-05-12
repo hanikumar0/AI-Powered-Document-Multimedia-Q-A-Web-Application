@@ -3,7 +3,7 @@ from ..schemas.auth_schema import UserCreate, UserLogin, Token
 from ..services.auth_service import AuthService
 from ..dependencies.auth_dependency import get_current_user
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+router = APIRouter(tags=["Authentication"])
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate):

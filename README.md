@@ -12,19 +12,32 @@ This is a production-ready AI application that allows users to interact with PDF
 ## Tech Stack
 - **Frontend**: Next.js 15, TypeScript, Tailwind CSS, shadcn/ui.
 - **Backend**: FastAPI, LangChain, FAISS, MongoDB.
-- **AI**: OpenAI GPT-4o, Whisper, Embeddings.
+- **AI**: Google Gemini 2.0 Flash, Gemini Embeddings.
 
-## Getting Started
+## CI/CD & Quality Assurance
 
-### Prerequisites
-- Docker & Docker Compose
-- OpenAI API Key
+This project implements a production-grade CI/CD pipeline using **GitHub Actions**.
 
-### Installation
-1. Clone the repository.
-2. Create a `.env` file in the `backend` directory with your `OPENAI_API_KEY`.
-3. Run `docker-compose up --build`.
-4. Open `http://localhost:3000` in your browser.
+### Pipeline Features
+- **Automated Validation**: Triggered on every push to `main` or `master`.
+- **Linting**: Enforces code style using `Black`, `Isort`, and `Flake8` (Backend) and `ESLint` (Frontend).
+- **Testing**: Runs full test suites for both Backend and Frontend.
+- **Coverage Enforcement**: Pipeline fails if code coverage drops below **95%**.
+- **Artifacts**: Uploads coverage reports as XML artifacts.
+
+### Running Tests Locally
+
+#### Backend Tests
+```powershell
+cd backend
+python -m pytest --cov=app --cov-report=term-missing tests/
+```
+
+#### Frontend Tests
+```powershell
+cd frontend
+npm test:coverage
+```
 
 ## Architecture
-See the `artifacts/implementation_plan.md` for a detailed breakdown of the system architecture and implementation phases.
+See the `TESTING_REPORT.md` and `TESTING_GUIDE.md` for detailed information on the testing strategy and quality assurance measures.

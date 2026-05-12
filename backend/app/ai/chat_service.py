@@ -5,6 +5,39 @@ class ChatService:
         self.client = gemini_client.get_client()
 
     async def generate_response(self, message: str, context: str = "", attached_files: list[str] = None, history: list[dict] = None):
+        # Implementation remains for backward compatibility or non-streamed calls
+        contents, system_prompt = self._prepare_payload(message, context, attached_files, history)
+        
+        try:
+            response = self.client.models.generate_content(
+                model="models/gemini-3-flash-preview",
+                contents=contents,
+                config={"system_instruction": system_prompt}
+            )
+            return response.text if response and response.text else "Empty response."
+        except Exception as e:
+            print(f"Gemini API Error: {e}")
+            raise e
+
+    async def generate_response_stream(self, message: str, context: str = "", attached_files: list[str] = None, history: list[dict] = None):
+        contents, system_prompt = self._prepare_payload(message, context, attached_files, history)
+        
+        try:
+            # Using the genai.Client streaming syntax
+            response_stream = self.client.models.generate_content_stream(
+                model="models/gemini-3-flash-preview",
+                contents=contents,
+                config={"system_instruction": system_prompt}
+            )
+            
+            for chunk in response_stream:
+                if chunk.text:
+                    yield chunk.text
+        except Exception as e:
+            print(f"Gemini Streaming Error: {e}")
+            yield f"\n[Error: {str(e)}]"
+
+    def _prepare_payload(self, message: str, context: str = "", attached_files: list[str] = None, history: list[dict] = None):
         files_str = ", ".join(attached_files) if attached_files else "None"
         
         system_prompt = f"""
@@ -24,10 +57,7 @@ class ChatService:
         If the context is empty but files are attached, acknowledge the files and ask for a specific question about them, but do NOT speculate on their contents.
         """
         
-        # Build contents for Gemini 3
         contents = []
-        
-        # Add history
         if history:
             for msg in history:
                 contents.append({
@@ -35,11 +65,9 @@ class ChatService:
                     "parts": [{"text": msg["content"]}]
                 })
         
-        # Add current message with context
         current_content = ""
         if context:
             current_content += f"Context from attached files:\n{context}\n\n"
-        
         current_content += f"User Question: {message}"
         
         contents.append({
@@ -47,23 +75,6 @@ class ChatService:
             "parts": [{"text": current_content}]
         })
         
-        try:
-            # Using the genai.Client (new SDK) syntax
-            response = self.client.models.generate_content(
-                model="models/gemini-3-flash-preview",
-                contents=contents,
-                config={
-                    "system_instruction": system_prompt
-                }
-            )
-            
-            if not response or not response.text:
-                print("Warning: Gemini returned an empty response.")
-                return "I'm sorry, I couldn't generate a response at this time. Please try rephrasing your question."
-                
-            return response.text
-        except Exception as e:
-            print(f"Gemini API Error: {e}")
-            raise e
+        return contents, system_prompt
 
 chat_service = ChatService()

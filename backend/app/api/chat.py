@@ -1,4 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import StreamingResponse
+import json
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
@@ -190,6 +192,99 @@ async def send_message(request: ChatRequest):
             )
         
         raise HTTPException(status_code=500, detail=f"AI Error: {error_msg}")
+
+@router.post("/message/stream")
+async def send_message_stream(request: ChatRequest):
+    db = get_database()
+    session = await db.chat_sessions.find_one({"_id": request.session_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    file_ids = session.get("file_ids", [])
+    
+    async def stream_generator():
+        full_answer = ""
+        sources = []
+        mode = "general"
+        
+        try:
+            # 1. Search vector store
+            meta_keywords = ["folder", "file", "inside", "detail", "summary", "all", "this", "these"]
+            if file_ids and any(kw in request.message.lower() for kw in meta_keywords):
+                results = vector_store.get_all_content_for_files(file_ids)
+            else:
+                results = vector_store.search(request.message, k=5, file_ids=file_ids)
+            
+            # 2. Get attached file names
+            attached_file_names = []
+            if file_ids:
+                files_data = await db.files.find({"file_id": {"$in": file_ids}}).to_list(length=100)
+                attached_file_names = [f["filename"] for f in files_data]
+
+            # 3. Fetch conversation history
+            history = await db.chat_messages.find({"session_id": request.session_id}).sort("timestamp", 1).to_list(length=20)
+            formatted_history = [{"role": m["role"], "content": m["content"]} for m in history]
+
+            # 4. Construct context
+            context = ""
+            if results:
+                mode = "rag"
+                for res in results:
+                    meta = res["metadata"]
+                    page_info = f" (Page {meta.get('page')})" if meta.get("page") else ""
+                    context += f"\nContent: {meta.get('text')}\nSource: {meta.get('filename')}{page_info}\n"
+                    sources.append(meta)
+
+            # 5. Start Stream
+            async for chunk in chat_service.generate_response_stream(
+                request.message, 
+                context, 
+                attached_files=attached_file_names, 
+                history=formatted_history
+            ):
+                full_answer += chunk
+                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+
+            # 6. Deduplicate sources
+            seen_filenames = set()
+            deduplicated_sources = []
+            for s in sources:
+                fname = s.get("filename")
+                if fname not in seen_filenames:
+                    seen_filenames.add(fname)
+                    deduplicated_sources.append(s)
+
+            # 7. Save messages
+            user_msg = {
+                "session_id": request.session_id,
+                "role": "user",
+                "content": request.message,
+                "timestamp": datetime.now()
+            }
+            ai_msg_id = str(uuid.uuid4())
+            ai_msg = {
+                "_id": ai_msg_id,
+                "session_id": request.session_id,
+                "role": "assistant",
+                "content": full_answer,
+                "answer": full_answer,
+                "sources": deduplicated_sources,
+                "mode": mode,
+                "timestamp": datetime.now()
+            }
+            await db.chat_messages.insert_many([user_msg, ai_msg])
+            await db.chat_sessions.update_one(
+                {"_id": request.session_id},
+                {"$set": {"updated_at": datetime.now()}}
+            )
+
+            # 8. Send final event
+            yield f"data: {json.dumps({'type': 'done', 'id': ai_msg_id, 'sources': deduplicated_sources})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+
+    return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):

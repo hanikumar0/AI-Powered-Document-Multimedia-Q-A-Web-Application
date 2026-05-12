@@ -27,7 +27,9 @@ interface ChatState {
   switchSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   addMessage: (message: Message) => void;
+  updateMessage: (index: number, content: string, sources?: any[]) => void;
   setMessages: (messages: Message[]) => void;
+  setIsLoading: (loading: boolean) => void;
   setActiveSession: (session: ChatSession | null) => void;
   attachFilesToActiveSession: (fileIds: string[]) => Promise<void>;
 }
@@ -97,7 +99,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     messages: [...state.messages, message] 
   })),
 
+  updateMessage: (index, content, sources) => set((state) => {
+    const newMessages = [...state.messages];
+    if (newMessages[index]) {
+      newMessages[index] = { 
+        ...newMessages[index], 
+        content,
+        ...(sources && { sources })
+      };
+    }
+    return { messages: newMessages };
+  }),
+
   setMessages: (messages) => set({ messages }),
+
+  setIsLoading: (loading) => set({ isLoading: loading }),
 
   setActiveSession: (session) => set({ activeSession: session }),
 
