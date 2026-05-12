@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Send, User, Bot, Paperclip, Clock } from 'lucide-react';
+import { Send, User, Bot, Paperclip, Clock, FileText } from 'lucide-react';
 import { chatService } from '@/services/chatService';
+import { useFileStore } from '@/store/fileStore';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -23,6 +24,22 @@ export default function ChatWorkspace() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { selectedFile, setSelectedFile } = useFileStore();
+
+  useEffect(() => {
+    if (selectedFile) {
+      const welcomeMsg: Message = {
+        role: 'assistant',
+        content: `I've loaded your file: **${selectedFile.filename}**. 
+
+How can I help you with this ${selectedFile.type || 'document'}? I can summarize it, answer specific questions, or help you find details.`,
+        timestamp: new Date().toLocaleTimeString()
+      };
+      setMessages([welcomeMsg]);
+      // Optional: Clear selection after loading so it doesn't re-trigger on remount 
+      // unless that's desired behavior. Let's keep it for now.
+    }
+  }, [selectedFile]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -42,7 +59,7 @@ export default function ChatWorkspace() {
     setIsLoading(true);
 
     try {
-      const response = await chatService.sendMessage(input);
+      const response = await chatService.sendMessage(input, selectedFile?.file_id);
       const aiMsg: Message = {
         role: 'assistant',
         content: response.answer,
@@ -117,6 +134,20 @@ export default function ChatWorkspace() {
       </div>
 
       <div className="p-6 bg-[#111827]/50 border-t border-[#1F2937]">
+        {selectedFile && (
+          <div className="max-w-4xl mx-auto mb-4 flex items-center gap-2">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs">
+              <FileText className="w-3.5 h-3.5" />
+              <span className="font-medium truncate max-w-[200px]">{selectedFile.filename}</span>
+              <button 
+                onClick={() => setSelectedFile(null)}
+                className="ml-1 hover:text-white transition-colors"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
         <div className="max-w-4xl mx-auto relative">
           <input
             type="text"

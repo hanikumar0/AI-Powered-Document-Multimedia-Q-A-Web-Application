@@ -11,17 +11,20 @@ interface FileData {
 
 interface FileState {
   files: FileData[];
+  selectedFile: FileData | null;
   isLoading: boolean;
   error: string | null;
   fetchFiles: () => Promise<void>;
   addFile: (file: FileData) => void;
   updateFileStatus: (fileId: string, status: FileData['status']) => void;
+  setSelectedFile: (file: FileData | null) => void;
 }
 
 export const useFileStore = create<FileState>()(
   persist(
     (set, get) => ({
       files: [],
+      selectedFile: null,
       isLoading: false,
       error: null,
 
@@ -43,6 +46,10 @@ export const useFileStore = create<FileState>()(
         set((state) => ({
           files: state.files.map((f) => (f.file_id === fileId ? { ...f, status } : f)),
         }));
+      },
+
+      setSelectedFile: (file) => {
+        set({ selectedFile: file });
       },
     }),
     {

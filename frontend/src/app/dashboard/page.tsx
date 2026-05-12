@@ -11,7 +11,7 @@ import { useFileStore } from '@/store/fileStore';
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const { files, fetchFiles, isLoading } = useFileStore();
+  const { files, fetchFiles, isLoading, setSelectedFile } = useFileStore();
 
   useEffect(() => {
     fetchFiles();
@@ -92,7 +92,10 @@ export default function Dashboard() {
                             </div>
                           </div>
                           <button 
-                            onClick={() => setActiveTab('chats')}
+                            onClick={() => {
+                              setSelectedFile(file);
+                              setActiveTab('chats');
+                            }}
                             className="text-xs px-4 py-2 rounded-lg bg-[#1F2937] hover:bg-[#1F2937]/80 text-gray-400 hover:text-white transition-colors"
                           >
                             Open Chat
