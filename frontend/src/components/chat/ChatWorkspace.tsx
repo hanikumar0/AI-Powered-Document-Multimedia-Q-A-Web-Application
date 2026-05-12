@@ -14,7 +14,8 @@ import {
   FilePlus, 
   X,
   Loader2,
-  ChevronDown
+  ChevronDown,
+  MessageSquare
 } from 'lucide-react';
 import { fileService } from '@/services/fileService';
 import { useFileStore } from '@/store/fileStore';
@@ -61,33 +62,19 @@ export default function ChatWorkspace() {
       fetchSessions(); // Refresh to update session order/titles
     } catch (error: any) {
       console.error('Chat error:', error);
-      addMessage({
-        role: 'assistant',
-        content: "I'm sorry, I encountered an error processing your request. Please try again later.",
-        timestamp: new Date().toISOString()
-      });
-    }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeSession) return;
-
-    setIsUploading(true);
-    try {
-      const uploadedData = await fileService.upload(file);
-      await attachFilesToActiveSession([uploadedData.file_id]);
+      let errorMessage = "I'm sorry, I encountered an error processing your request.";
       
+      if (error.response?.status === 429) {
+        errorMessage = "Rate limit exceeded. The AI service is currently busy. Please wait about 30 seconds and try again.";
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      }
+
       addMessage({
         role: 'assistant',
-        content: `Uploaded and attached: **${file.name}**. I'm analyzing it now!`,
+        content: errorMessage,
         timestamp: new Date().toISOString()
       });
-    } catch (error) {
-      console.error('Upload error:', error);
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -116,6 +103,8 @@ export default function ChatWorkspace() {
     );
   }
 
+  const attachedFiles = getAttachedFiles();
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0B0F19] relative overflow-hidden">
       {/* Header */}
@@ -130,20 +119,20 @@ export default function ChatWorkspace() {
         </div>
         <div className="flex items-center gap-4">
           <div className="flex -space-x-2">
-            {getAttachedFiles().slice(0, 3).map((f, i) => (
-              <div key={i} className="w-6 h-6 rounded-full bg-[#1F2937] border-2 border-[#0B0F19] flex items-center justify-center">
+            {attachedFiles.slice(0, 3).map((f, i) => (
+              <div key={i} className="w-6 h-6 rounded-full bg-[#1F2937] border-2 border-[#0B0F19] flex items-center justify-center" title={f.filename}>
                 <FileText className="w-3 h-3 text-purple-400" />
               </div>
             ))}
-            {getAttachedFiles().length > 3 && (
+            {attachedFiles.length > 3 && (
               <div className="w-6 h-6 rounded-full bg-[#1F2937] border-2 border-[#0B0F19] flex items-center justify-center text-[8px] font-bold text-gray-400">
-                +{getAttachedFiles().length - 3}
+                +{attachedFiles.length - 3}
               </div>
             )}
           </div>
           <button 
             onClick={() => setIsAttachmentModalOpen(true)}
-            className="text-xs font-medium text-purple-400 hover:text-purple-300 transition-colors"
+            className="text-xs font-bold uppercase tracking-widest text-purple-500 hover:text-purple-400 transition-colors"
           >
             Manage Files
           </button>
@@ -153,12 +142,29 @@ export default function ChatWorkspace() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
         {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-40 py-20">
-            <Bot className="w-16 h-16 text-purple-500" />
-            <div className="max-w-sm">
-              <h3 className="text-lg font-semibold text-white">How can I help you today?</h3>
-              <p className="text-sm mt-2">Upload or attach files to enable document-aware intelligence, or ask a general question.</p>
+          <div className="h-full flex flex-col items-center justify-center text-center space-y-8 py-20">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="w-20 h-20 bg-purple-600/10 rounded-3xl flex items-center justify-center border border-purple-500/10"
+            >
+              <Bot className="w-10 h-10 text-purple-500" />
+            </motion.div>
+            <div className="max-w-sm space-y-3">
+              <h3 className="text-xl font-bold text-white">Document Intelligence</h3>
+              <p className="text-sm text-gray-400">
+                Upload or attach files to chat with your data, or ask me anything for general assistance.
+              </p>
             </div>
+            {attachedFiles.length === 0 && (
+              <button 
+                onClick={() => setIsAttachmentModalOpen(true)}
+                className="flex items-center gap-2 px-6 py-3 bg-purple-600/10 border border-purple-500/20 rounded-2xl text-purple-500 hover:bg-purple-600/20 transition-all font-bold text-xs uppercase tracking-widest"
+              >
+                <Paperclip className="w-4 h-4" />
+                Attach Documents
+              </button>
+            )}
           </div>
         )}
         
@@ -169,18 +175,18 @@ export default function ChatWorkspace() {
             key={i}
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            <div className={`flex gap-6 max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+            <div className={`flex gap-6 max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
               <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center shadow-lg ${
-                msg.role === 'user' ? 'bg-[#7C3AED] shadow-purple-500/20' : 'bg-[#1F2937] border border-white/5'
+                msg.role === 'user' ? 'bg-purple-600 shadow-purple-500/20' : 'bg-[#1E293B] border border-white/5'
               }`}>
                 {msg.role === 'user' ? <User className="w-5 h-5 text-white" /> : <Bot className="w-5 h-5 text-cyan-400" />}
               </div>
               
-              <div className="space-y-3">
-                <div className={`p-5 rounded-3xl ${
+              <div className={`space-y-3 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                <div className={`p-5 rounded-[28px] ${
                   msg.role === 'user' 
-                    ? 'bg-[#7C3AED] text-white shadow-xl shadow-purple-500/10' 
-                    : 'bg-[#1F2937] border border-white/5 text-gray-200'
+                    ? 'bg-purple-600 text-white shadow-xl shadow-purple-500/10' 
+                    : 'bg-[#1E293B] border border-white/5 text-gray-200'
                 }`}>
                   <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                 </div>
@@ -188,14 +194,13 @@ export default function ChatWorkspace() {
                 {msg.sources && msg.sources.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {msg.sources.map((source: any, j: number) => (
-                      <button key={j} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-500/5 border border-cyan-500/10 text-cyan-400 text-[10px] font-medium hover:bg-cyan-500/10 transition-all">
-                        <Clock className="w-3 h-3" />
+                      <button key={j} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-500/5 border border-cyan-500/10 text-cyan-400 text-[10px] font-bold uppercase tracking-wider hover:bg-cyan-500/10 transition-all">
                         {source.filename} {source.timestamp && `@ ${source.timestamp}`}
                       </button>
                     ))}
                   </div>
                 )}
-                <p className="text-[10px] text-gray-500 font-medium px-2">
+                <p className={`text-[10px] text-gray-500 font-bold uppercase tracking-widest px-2 ${msg.role === 'user' ? 'text-right' : ''}`}>
                   {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
@@ -205,11 +210,11 @@ export default function ChatWorkspace() {
         {isLoading && (
           <div className="flex justify-start">
             <div className="flex gap-6">
-              <div className="w-10 h-10 rounded-2xl bg-[#1F2937] border border-white/5 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-2xl bg-[#1E293B] border border-white/5 flex items-center justify-center">
                 <Loader2 className="w-5 h-5 text-purple-500 animate-spin" />
               </div>
-              <div className="bg-[#1F2937] border border-white/5 p-5 rounded-3xl">
-                <div className="flex gap-1">
+              <div className="bg-[#1E293B] border border-white/5 px-6 py-4 rounded-[28px]">
+                <div className="flex gap-1.5">
                   <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                   <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                   <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
@@ -226,60 +231,37 @@ export default function ChatWorkspace() {
         <div className="max-w-4xl mx-auto">
           {/* File Chips */}
           <AnimatePresence>
-            {getAttachedFiles().length > 0 && (
+            {attachedFiles.length > 0 && (
               <motion.div 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
                 className="flex flex-wrap gap-2 mb-4"
               >
-                {getAttachedFiles().map(file => (
-                  <div key={file.file_id} className="flex items-center gap-2 px-3 py-1.5 bg-[#1F2937] border border-white/10 rounded-xl group transition-all hover:border-purple-500/50">
+                {attachedFiles.map(file => (
+                  <div key={file.file_id} className="flex items-center gap-2 px-3 py-1.5 bg-[#1E293B] border border-white/10 rounded-xl group transition-all hover:border-purple-500/50">
                     <FileText className="w-3 h-3 text-purple-400" />
-                    <span className="text-[10px] font-medium text-gray-300 truncate max-w-[150px]">{file.filename}</span>
+                    <span className="text-[10px] font-bold text-gray-300 truncate max-w-[150px] uppercase tracking-wider">{file.filename}</span>
                     <button className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-white/10 rounded transition-all text-gray-500 hover:text-red-400">
                       <X className="w-3 h-3" />
                     </button>
                   </div>
                 ))}
-                <button 
-                  onClick={() => setIsAttachmentModalOpen(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-purple-600/10 border border-purple-500/20 rounded-xl text-purple-400 hover:bg-purple-600/20 transition-all"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span className="text-[10px] font-bold">Add More</span>
-                </button>
               </motion.div>
             )}
           </AnimatePresence>
 
           <div className="relative group">
-            <div className="absolute inset-0 bg-purple-600/10 blur-xl rounded-full opacity-0 group-focus-within:opacity-100 transition-opacity pointer-events-none" />
+            <div className="absolute inset-0 bg-purple-600/5 blur-2xl rounded-full opacity-0 group-focus-within:opacity-100 transition-opacity pointer-events-none" />
             
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            
-            <div className="relative flex items-end gap-2 bg-[#1F2937]/80 backdrop-blur-xl border border-white/10 rounded-[28px] p-2 pr-4 focus-within:border-purple-500/50 transition-all shadow-2xl">
-              <div className="flex flex-col">
-                <button 
-                  onClick={() => setIsAttachmentModalOpen(true)}
-                  className="p-3 text-gray-400 hover:text-purple-400 transition-colors"
-                  title="Attach Existing File"
-                >
-                  <FilePlus className="w-6 h-6" />
-                </button>
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-3 text-gray-400 hover:text-purple-400 transition-colors"
-                  title="Upload New File"
-                >
-                  <Upload className="w-6 h-6" />
-                </button>
-              </div>
+            <div className="relative flex items-end gap-2 bg-[#1E293B]/80 backdrop-blur-2xl border border-white/10 rounded-[32px] p-2 pr-4 focus-within:border-purple-500/50 transition-all shadow-2xl">
+              <button 
+                onClick={() => setIsAttachmentModalOpen(true)}
+                className="p-4 text-gray-400 hover:text-purple-400 transition-colors"
+                title="Attach Files"
+              >
+                <Paperclip className="w-6 h-6" />
+              </button>
 
               <textarea
                 value={input}
@@ -290,15 +272,15 @@ export default function ChatWorkspace() {
                     handleSend();
                   }
                 }}
-                placeholder="Ask anything..."
+                placeholder="Message Gemini..."
                 rows={1}
-                className="flex-1 bg-transparent border-none focus:ring-0 text-white py-3 px-2 resize-none max-h-40 custom-scrollbar text-sm placeholder:text-gray-500"
+                className="flex-1 bg-transparent border-none focus:ring-0 text-white py-4 px-2 resize-none max-h-40 custom-scrollbar text-sm placeholder:text-gray-500"
               />
 
               <button 
                 onClick={handleSend}
                 disabled={!input.trim() || isLoading}
-                className={`p-3 rounded-2xl transition-all ${
+                className={`p-3.5 rounded-[22px] transition-all ${
                   input.trim() && !isLoading 
                     ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/40 hover:bg-purple-500 active:scale-95' 
                     : 'bg-white/5 text-gray-600'
@@ -308,8 +290,8 @@ export default function ChatWorkspace() {
               </button>
             </div>
           </div>
-          <p className="text-center text-[10px] text-gray-600 mt-4 font-medium uppercase tracking-widest">
-            Gemini 2.0 Flash • Document Intelligence Workspace
+          <p className="text-center text-[10px] text-gray-600 mt-5 font-bold uppercase tracking-[0.2em]">
+            Gemini 3 Flash • Secure Intelligence
           </p>
         </div>
       </div>
@@ -322,4 +304,3 @@ export default function ChatWorkspace() {
   );
 }
 
-import { MessageSquare } from 'lucide-react';

@@ -20,7 +20,7 @@ class GeminiClient:
             file_data = self.client.files.upload(path=file_path)
             
             response = self.client.models.generate_content(
-                model="models/gemini-2.0-flash", # Using the latest stable flash model
+                model="models/gemini-3-flash-preview", 
                 contents=[
                     file_data,
                     "Extract all text from this document accurately. If it's an ID card, extract the details."

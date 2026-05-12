@@ -7,7 +7,7 @@ from ..rag.vector_store import vector_store
 from ..db.mongodb import get_database
 from ..ai.chat_service import chat_service
 
-router = APIRouter(prefix="/chat", tags=["Chat"])
+router = APIRouter(tags=["Chat"])
 
 # --- Models ---
 
@@ -64,6 +64,8 @@ async def create_session(request: SessionCreate):
 async def get_messages(session_id: str):
     db = get_database()
     messages = await db.chat_messages.find({"session_id": session_id}).sort("timestamp", 1).to_list(1000)
+    for m in messages:
+        m["id"] = str(m.pop("_id"))
     return messages
 
 @router.post("/sessions/{session_id}/files")
@@ -86,24 +88,67 @@ async def send_message(request: ChatRequest):
     
     try:
         # 1. Search vector store (filtered by conversation files)
-        results = vector_store.search(request.message, k=5, file_ids=file_ids)
+        # For meta-queries like "what is inside", "summary", "details", fetch all content
+        meta_keywords = ["folder", "file", "inside", "detail", "summary", "all", "this", "these"]
+        if file_ids and any(kw in request.message.lower() for kw in meta_keywords):
+            print(f"Meta-query detected: {request.message}. Fetching all file content.")
+            results = vector_store.get_all_content_for_files(file_ids)
+        else:
+            results = vector_store.search(request.message, k=5, file_ids=file_ids)
         
-        # 2. Construct context
+        # 2. Get attached file names for prompt context
+        attached_file_names = []
+        if file_ids:
+            try:
+                files_data = await db.files.find({"file_id": {"$in": file_ids}}).to_list(length=100)
+                attached_file_names = [f["filename"] for f in files_data]
+            except Exception as fe:
+                print(f"Warning: Failed to fetch file names: {fe}")
+
+        # 3. Fetch conversation history for multi-turn context
+        formatted_history = []
+        try:
+            history = await db.chat_messages.find({"session_id": request.session_id}).sort("timestamp", 1).to_list(length=20)
+            formatted_history = [{"role": m["role"], "content": m["content"]} for m in history]
+        except Exception as he:
+            print(f"Warning: Failed to fetch history: {he}")
+
+        # 4. Construct context
         context = ""
         sources = []
         mode = "general"
         
         if results:
             mode = "rag"
+            print(f"--- Raw Context for Query: {request.message} ---")
             for res in results:
                 meta = res["metadata"]
-                context += f"\nContent: {meta.get('text')}\nSource: {meta.get('filename')} at {meta.get('timestamp', 'N/A')}\n"
+                page_info = f" (Page {meta.get('page')})" if meta.get("page") else ""
+                source_text = f"\nContent: {meta.get('text')}\nSource: {meta.get('filename')}{page_info}\n"
+                context += source_text
+                print(source_text)
                 sources.append(meta)
+            print("--- End of Context ---")
 
-        # 3. Call Chat Service (Gemini)
-        answer = await chat_service.generate_response(request.message, context)
+        # 5. Call Chat Service (Gemini)
+        print(f"Generating response for session {request.session_id} with {len(attached_file_names)} files and {len(formatted_history)} history messages.")
+        answer = await chat_service.generate_response(
+            request.message, 
+            context, 
+            attached_files=attached_file_names, 
+            history=formatted_history
+        )
         
-        # 4. Save messages
+        # Deduplicate sources for cleaner UI representation (one chip per file)
+        seen_filenames = set()
+        deduplicated_sources = []
+        for s in sources:
+            fname = s.get("filename")
+            if fname not in seen_filenames:
+                seen_filenames.add(fname)
+                deduplicated_sources.append(s)
+
+        # 6. Save messages
         user_msg = {
             "session_id": request.session_id,
             "role": "user",
@@ -113,8 +158,9 @@ async def send_message(request: ChatRequest):
         ai_msg = {
             "session_id": request.session_id,
             "role": "assistant",
-            "content": answer,
-            "sources": sources,
+            "content": answer, # Kept for frontend Message interface
+            "answer": answer,  # Added for reliability Step 9
+            "sources": deduplicated_sources,
             "mode": mode,
             "timestamp": datetime.now()
         }
@@ -125,10 +171,25 @@ async def send_message(request: ChatRequest):
             {"$set": {"updated_at": datetime.now()}}
         )
         
+        # Convert _id to id for response
+        ai_msg["id"] = str(ai_msg.pop("_id"))
         return ai_msg
     except Exception as e:
-        print(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        traceback.print_exc()
+        error_msg = str(e)
+        print(f"Chat error details: {error_msg}")
+        
+        # Catch various forms of rate limit/quota errors
+        is_rate_limit = any(term in error_msg.upper() for term in ["429", "RESOURCE_EXHAUSTED", "QUOTA", "RATE_LIMIT"])
+        
+        if is_rate_limit:
+            raise HTTPException(
+                status_code=429, 
+                detail="AI service rate limit reached. Please wait a few seconds and try again."
+            )
+        
+        raise HTTPException(status_code=500, detail=f"AI Error: {error_msg}")
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):

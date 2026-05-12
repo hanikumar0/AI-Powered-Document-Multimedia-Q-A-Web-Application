@@ -27,9 +27,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(upload.router, prefix="/api")
-app.include_router(chat.router, prefix="/api")
-app.include_router(auth.router, prefix="/api")
+app.include_router(upload.router, prefix="/api/upload")
+app.include_router(chat.router, prefix="/api/chat")
+app.include_router(auth.router, prefix="/api/auth")
 
 @app.get("/")
 async def root():
