@@ -2,7 +2,7 @@ from .gemini_client import gemini_client
 import numpy as np
 
 class EmbeddingService:
-    def __init__(self, model_name="text-embedding-004"): # Using the latest recommended model
+    def __init__(self, model_name="models/gemini-embedding-2"): # Using a supported model from the list
         self.client = gemini_client.get_client()
         self.model_name = model_name
 

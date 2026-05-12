@@ -11,8 +11,8 @@ else:
     client = genai.Client(api_key=api_key)
     print("Available models:")
     try:
-        # In the new SDK, models are listed via client.models.list()
         for m in client.models.list():
-            print(f"Name: {m.name}, Base Model: {m.base_model_id}")
+            # Print the whole object to see attributes if needed, or just name
+            print(f"Name: {m.name}")
     except Exception as e:
         print(f"Error listing models: {e}")

@@ -15,10 +15,14 @@ interface Message {
 }
 
 export default function ChatWorkspace() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { selectedFile, setSelectedFile, addFile, files } = useFileStore();
+  const [isAttaching, setIsAttaching] = useState(false);
+
   const [messages, setMessages] = useState<Message[]>([
     { 
       role: 'assistant', 
-      content: "Hello! I'm your AI assistant. Ask me anything about your uploaded files.", 
+      content: "Hello! I'm your AI assistant. You can chat with me normally, or upload documents and media to enable specialized file-intelligence.", 
       timestamp: new Date().toLocaleTimeString() 
     }
   ]);
@@ -26,7 +30,7 @@ export default function ChatWorkspace() {
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { selectedFile, setSelectedFile, addFile } = useFileStore();
+  const { selectedFile, setSelectedFile, addFile, files } = useFileStore();
   const [isAttaching, setIsAttaching] = useState(false);
 
   useEffect(() => {
@@ -115,6 +119,30 @@ How can I help you with this ${selectedFile.type || 'document'}? I can summarize
   return (
     <div className="flex flex-col h-full bg-[#0B0F19]">
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {files.length === 0 && messages.length === 1 && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center justify-center py-20 text-center space-y-6"
+          >
+            <div className="w-20 h-20 rounded-3xl bg-[#1F2937] flex items-center justify-center border border-white/5">
+              <Bot className="w-10 h-10 text-purple-500" />
+            </div>
+            <div className="max-w-md space-y-2">
+              <h3 className="text-xl font-bold text-white">Unlock Document Intelligence</h3>
+              <p className="text-gray-400 text-sm">
+                Upload PDFs, videos, or audio files to start chatting with your content. 
+                Until then, I'm happy to help with general questions!
+              </p>
+            </div>
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="px-6 py-3 bg-[#7C3AED] hover:bg-[#6D28D9] rounded-xl font-medium transition-all shadow-lg shadow-purple-500/20 flex items-center gap-2"
+            >
+              <Paperclip className="w-4 h-4" /> Upload First File
+            </button>
+          </motion.div>
+        )}
         {messages.map((msg: Message, i: number) => (
           <motion.div
             initial={{ opacity: 0, y: 10 }}

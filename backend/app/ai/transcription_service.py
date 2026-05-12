@@ -29,7 +29,7 @@ class TranscriptionService:
             # 3. Generate transcript
             prompt = "Transcribe this file exactly. Provide the output in a clean text format with segments and timestamps if possible."
             response = self.client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="models/gemini-2.0-flash",
                 contents=[uploaded_file, prompt]
             )
             

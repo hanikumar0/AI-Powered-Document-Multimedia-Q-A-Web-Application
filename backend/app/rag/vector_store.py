@@ -26,19 +26,30 @@ class VectorStore:
         self.save()
 
     def search(self, query: str, k=5):
-        query_embedding = embedding_service.get_query_embedding(query)
-        query_embedding_np = np.array([query_embedding]).astype('float32')
-        
-        distances, indices = self.index.search(query_embedding_np, k)
-        
-        results = []
-        for i, idx in enumerate(indices[0]):
-            if idx != -1:
-                results.append({
-                    "metadata": self.metadata[idx],
-                    "score": float(distances[0][i])
-                })
-        return results
+        # Safety check: If index is empty, return empty results
+        if not self.index or self.index.ntotal == 0:
+            return []
+            
+        try:
+            query_embedding = embedding_service.get_query_embedding(query)
+            if not query_embedding:
+                return []
+                
+            query_embedding_np = np.array([query_embedding]).astype('float32')
+            
+            distances, indices = self.index.search(query_embedding_np, k)
+            
+            results = []
+            for i, idx in enumerate(indices[0]):
+                if idx != -1 and idx < len(self.metadata):
+                    results.append({
+                        "metadata": self.metadata[idx],
+                        "score": float(distances[0][i])
+                    })
+            return results
+        except Exception as e:
+            print(f"Vector search error: {e}")
+            return []
 
     def save(self):
         faiss.write_index(self.index, f"{self.index_path}.index")
