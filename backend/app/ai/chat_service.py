@@ -2,7 +2,7 @@ from .gemini_client import gemini_client
 
 class ChatService:
     def __init__(self):
-        self.model = gemini_client.get_model("gemini-3-flash-preview")
+        self.client = gemini_client.get_client()
 
     async def generate_response(self, message: str, context: str):
         prompt = f"""
@@ -18,7 +18,10 @@ class ChatService:
         Answer:
         """
         
-        response = self.model.generate_content(prompt)
+        response = self.client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
         return response.text
 
 chat_service = ChatService()
