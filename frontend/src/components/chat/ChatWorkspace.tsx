@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Send, User, Bot, Paperclip, Clock, FileText } from 'lucide-react';
 import { chatService } from '@/services/chatService';
+import { fileService } from '@/services/fileService';
 import { useFileStore } from '@/store/fileStore';
 
 interface Message {
@@ -24,7 +25,9 @@ export default function ChatWorkspace() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { selectedFile, setSelectedFile } = useFileStore();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { selectedFile, setSelectedFile, addFile } = useFileStore();
+  const [isAttaching, setIsAttaching] = useState(false);
 
   useEffect(() => {
     if (selectedFile) {
@@ -40,6 +43,36 @@ How can I help you with this ${selectedFile.type || 'document'}? I can summarize
       // unless that's desired behavior. Let's keep it for now.
     }
   }, [selectedFile]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsAttaching(true);
+    try {
+      const uploadedData = await fileService.upload(file);
+      addFile(uploadedData);
+      setSelectedFile(uploadedData);
+      
+      const systemMsg: Message = {
+        role: 'assistant',
+        content: `Attached and processed: **${file.name}**. I'm ready to answer questions about it!`,
+        timestamp: new Date().toLocaleTimeString()
+      };
+      setMessages(prev => [...prev, systemMsg]);
+    } catch (error) {
+      console.error('Attachment error:', error);
+      const errorMsg: Message = {
+        role: 'assistant',
+        content: `Sorry, I couldn't attach **${file.name}**. Please try again.`,
+        timestamp: new Date().toLocaleTimeString()
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
+      setIsAttaching(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -150,15 +183,28 @@ How can I help you with this ${selectedFile.type || 'document'}? I can summarize
         )}
         <div className="max-w-4xl mx-auto relative">
           <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            className="hidden"
+            accept=".pdf,.doc,.docx,.txt,.mp3,.wav,.mp4"
+          />
+          <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Ask a question about your files..."
-            disabled={isLoading}
+            disabled={isLoading || isAttaching}
             className="w-full bg-[#1F2937] border border-[#374151] rounded-2xl pl-12 pr-16 py-4 text-sm focus:outline-none focus:border-purple-500 transition-all placeholder:text-gray-500 text-white disabled:opacity-50"
           />
-          <button className="absolute left-4 top-1/2 -translate-y-1/2 p-1.5 text-gray-500 hover:text-purple-500 transition-colors">
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isAttaching}
+            className={`absolute left-4 top-1/2 -translate-y-1/2 p-1.5 transition-colors ${
+              isAttaching ? 'text-purple-500 animate-spin' : 'text-gray-500 hover:text-purple-500'
+            }`}
+          >
             <Paperclip className="w-5 h-5" />
           </button>
           <button 
