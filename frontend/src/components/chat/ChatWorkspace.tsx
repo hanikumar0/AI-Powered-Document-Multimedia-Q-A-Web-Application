@@ -29,9 +29,6 @@ export default function ChatWorkspace() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const { selectedFile, setSelectedFile, addFile, files } = useFileStore();
-  const [isAttaching, setIsAttaching] = useState(false);
 
   useEffect(() => {
     if (selectedFile) {
