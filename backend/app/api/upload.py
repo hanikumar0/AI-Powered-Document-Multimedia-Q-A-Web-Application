@@ -1,4 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 import shutil
 import os
 from uuid import uuid4
@@ -8,6 +9,9 @@ from ..ai.transcription_service import transcription_service
 from ..rag.text_chunker import chunk_text
 from ..rag.vector_store import vector_store
 from ..ai.gemini_client import gemini_client
+from ..services.cache_service import cache_service
+import json
+import hashlib
 
 router = APIRouter(tags=["Upload"])
 
@@ -23,6 +27,19 @@ async def get_files():
         file["_id"] = str(file["_id"])
     return files
 
+@router.get("/raw/{file_id}")
+async def get_raw_file(file_id: str):
+    db = get_database()
+    file = await db.files.find_one({"file_id": file_id})
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    file_path = file.get("path")
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File content not found on disk")
+        
+    return FileResponse(file_path, media_type=file.get("type"))
+
 @router.get("/{file_id}")
 async def get_file_status(file_id: str):
     db = get_database()
@@ -31,6 +48,32 @@ async def get_file_status(file_id: str):
         raise HTTPException(status_code=404, detail="File not found")
     file["_id"] = str(file["_id"])
     return file
+@router.get("/{file_id}/transcript")
+async def get_transcript(file_id: str):
+    db = get_database()
+    file = await db.files.find_one({"file_id": file_id})
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    file_hash = file.get("hash")
+    if not file_hash:
+        # Fallback for older files
+        file_path = file.get("path")
+        if not file_path or not os.path.exists(file_path):
+            return []
+        with open(file_path, "rb") as f:
+            file_hash = hashlib.md5(f.read()).hexdigest()
+    
+    cache_key = f"transcription:{file_hash}"
+    transcript_raw = await cache_service.get(cache_key)
+    
+    if not transcript_raw:
+        return []
+        
+    try:
+        return json.loads(transcript_raw)
+    except:
+        return []
 
 @router.post("/")
 async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
@@ -41,6 +84,11 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
     file_ext = os.path.splitext(file.filename)[1]
     file_path = os.path.join(UPLOAD_DIR, f"{file_id}{file_ext}")
     
+    # Pre-calculate hash for caching
+    file_content = await file.read()
+    file_hash = hashlib.md5(file_content).hexdigest()
+    await file.seek(0) # Reset file pointer for saving
+    
     try:
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -50,6 +98,8 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
             "file_id": file_id,
             "filename": file.filename,
             "type": file.content_type,
+            "extension": file_ext,
+            "hash": file_hash,
             "path": file_path,
             "status": "uploaded"
         }
@@ -84,16 +134,34 @@ async def process_file(file_id: str, file_path: str, filename: str, content_type
                             "text": chunk
                         })
         elif "audio" in content_type or "video" in content_type:
-            text = await transcription_service.transcribe_media(file_path)
-            if text:
-                chunks = chunk_text(text)
-                for chunk in chunks:
-                    all_chunks.append(chunk)
-                    all_metadatas.append({
-                        "file_id": file_id,
-                        "filename": filename,
-                        "text": chunk
-                    })
+            transcript_raw = await transcription_service.transcribe_media(file_path)
+            if transcript_raw:
+                try:
+                    segments = json.loads(transcript_raw)
+                    for segment in segments:
+                        text = segment.get("text", "")
+                        start_time = segment.get("start", 0)
+                        label = segment.get("timestamp_label", "")
+                        
+                        all_chunks.append(text)
+                        all_metadatas.append({
+                            "file_id": file_id,
+                            "filename": filename,
+                            "text": text,
+                            "start": start_time,
+                            "timestamp": label
+                        })
+                    print(f"Parsed {len(segments)} timed segments for {filename}")
+                except Exception as je:
+                    print(f"Failed to parse JSON transcript: {je}. Falling back to raw text.")
+                    chunks = chunk_text(transcript_raw)
+                    for chunk in chunks:
+                        all_chunks.append(chunk)
+                        all_metadatas.append({
+                            "file_id": file_id,
+                            "filename": filename,
+                            "text": chunk
+                        })
         
         # Fallback to Gemini for OCR (Scanned PDF/Image)
         if not all_chunks and ("pdf" in content_type or "image" in content_type):
@@ -113,7 +181,7 @@ async def process_file(file_id: str, file_path: str, filename: str, content_type
         
         if all_chunks:
             print(f"Indexing {len(all_chunks)} chunks for {filename}")
-            vector_store.add_texts(all_chunks, all_metadatas)
+            await vector_store.add_texts(all_chunks, all_metadatas)
             await db.files.update_one({"file_id": file_id}, {"$set": {"status": "processed"}})
         else:
             print(f"No text extracted from {filename}")

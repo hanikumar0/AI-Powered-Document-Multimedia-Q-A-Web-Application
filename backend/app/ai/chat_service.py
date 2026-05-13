@@ -19,8 +19,8 @@ class ChatService:
             print(f"Gemini API Error: {e}")
             raise e
 
-    async def generate_response_stream(self, message: str, context: str = "", attached_files: list[str] = None, history: list[dict] = None):
-        contents, system_prompt = self._prepare_payload(message, context, attached_files, history)
+    async def generate_streaming_response(self, message: str, session_id: str, current_time: float = None, media_id: str = None, context: str = "", attached_files: list[str] = None, history: list[dict] = None):
+        contents, system_prompt = self._prepare_payload(message, context, attached_files, history, current_time)
         
         try:
             # Using the genai.Client streaming syntax
@@ -37,24 +37,32 @@ class ChatService:
             print(f"Gemini Streaming Error: {e}")
             yield f"\n[Error: {str(e)}]"
 
-    def _prepare_payload(self, message: str, context: str = "", attached_files: list[str] = None, history: list[dict] = None):
+    def _prepare_payload(self, message: str, context: str = "", attached_files: list[str] = None, history: list[dict] = None, current_time: float = None):
         files_str = ", ".join(attached_files) if attached_files else "None"
         
+        time_context = f"The user is CURRENTLY watching the media at timestamp {current_time}." if current_time is not None else ""
+        
         system_prompt = f"""
-        You are a senior AI document intelligence system. Your primary goal is ACCURACY and GROUNDING.
+        You are a senior AI multimedia intelligence and document processing system. Your primary goal is ACCURACY and GROUNDING.
         The user has attached the following files to this conversation: {files_str}.
+        {time_context}
         
-        CRITICAL OPERATING INSTRUCTIONS:
-        1. You must ONLY answer using the provided retrieved document context.
-        2. Do NOT invent, infer, fabricate, or hallucinate any information (names, ID numbers, dates, values).
-        3. Do NOT "fill in missing fields" or assume values based on common patterns.
-        4. If the information is not explicitly present in the provided context, you must say:
-           "I could not find that information in the uploaded document."
-        5. Every fact you state must include a citation in brackets, e.g., [File: name.pdf, Page: 1].
-        6. Every fact you state must be grounded in the provided context.
-        7. Be professional, concise, and purely factual. You are a document processor, not a creative writer.
+        MULTIMEDIA INTELLIGENCE PROTOCOL:
+        1. If you are provided with transcription segments containing timestamps (e.g., "[02:15]"), you MUST cite the exact timestamp when answering about that segment.
+        2. Format timestamps as [MM:SS] or [HH:MM:SS]. These will become interactive links for the user.
+        3. Place the timestamp citation immediately after the relevant fact (e.g., "The speaker mentioned a 20% budget increase [05:12]").
+        4. If a video/audio file is selected, prioritize these time-based citations over general summaries.
+        5. If the user asks about "right now", "just said", or "at this point", refer to the content near the CURRENT playback timestamp provided above.
         
-        If the context is empty but files are attached, acknowledge the files and ask for a specific question about them, but do NOT speculate on their contents.
+        DOCUMENT INTELLIGENCE PROTOCOL:
+        1. For PDFs, include a citation in brackets, e.g., [File: name.pdf, Page: 1].
+        2. If the information is not explicitly present in the provided context, you must say:
+           "I could not find that information in the uploaded content."
+        3. Do NOT invent, infer, or hallucinate any information or timestamps.
+        
+        GENERAL INSTRUCTIONS:
+        - Be professional, concise, and purely factual. 
+        - If the context is empty but files are attached, acknowledge the files and ask for a specific question about them.
         """
         
         contents = []

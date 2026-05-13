@@ -14,18 +14,18 @@ class VectorStore:
         if os.path.exists(f"{index_path}.index"):
             self.load()
 
-    def add_texts(self, texts: list[str], metadatas: list[dict]):
+    async def add_texts(self, texts: list[str], metadatas: list[dict]):
         if not texts:
             return
             
-        embeddings = embedding_service.get_embeddings(texts)
+        embeddings = await embedding_service.get_embeddings(texts)
         embeddings_np = np.array(embeddings).astype('float32')
         
         self.index.add(embeddings_np)
         self.metadata.extend(metadatas)
         self.save()
 
-    def search(self, query: str, k=5, file_ids: list[str] = None):
+    async def search(self, query: str, k=5, file_ids: list[str] = None):
         # Safety check: If index is empty, return empty results
         if not self.index or self.index.ntotal == 0:
             return []
@@ -37,7 +37,7 @@ class VectorStore:
         SIMILARITY_THRESHOLD = 1.5  # Adjust based on empirical testing with gemini-embedding-001
         
         try:
-            query_embedding = embedding_service.get_query_embedding(query)
+            query_embedding = await embedding_service.get_query_embedding(query)
             if not query_embedding:
                 return []
                 
@@ -90,7 +90,29 @@ class VectorStore:
                 })
         return results
 
-    def remove_file_data(self, file_id: str):
+    def get_context_around_time(self, file_id: str, current_time: float, window_seconds: int = 45):
+        """Retrieves transcript segments around a specific timestamp for a specific file."""
+        results = []
+        start_bound = max(0, current_time - window_seconds)
+        end_bound = current_time + window_seconds
+        
+        for meta in self.metadata:
+            if meta.get("file_id") == file_id and meta.get("type") == "transcript_chunk":
+                chunk_start = meta.get("start", 0)
+                chunk_end = meta.get("end", 0)
+                
+                # Check for overlap with the time window
+                if (chunk_start <= end_bound and chunk_end >= start_bound):
+                    results.append({
+                        "metadata": meta,
+                        "score": 0.1 # High priority but artificial score
+                    })
+        
+        # Sort by start time to keep context chronological
+        results.sort(key=lambda x: x["metadata"].get("start", 0))
+        return results
+
+    async def remove_file_data(self, file_id: str):
         """Removes all chunks and embeddings associated with a file_id."""
         new_metadata = [m for m in self.metadata if m.get("file_id") != file_id]
         if len(new_metadata) == len(self.metadata):
@@ -103,7 +125,7 @@ class VectorStore:
         self.index = faiss.IndexFlatL2(self.dimension)
         if self.metadata:
             texts = [m["text"] for m in self.metadata]
-            embeddings = embedding_service.get_embeddings(texts)
+            embeddings = await embedding_service.get_embeddings(texts)
             embeddings_np = np.array(embeddings).astype('float32')
             self.index.add(embeddings_np)
         

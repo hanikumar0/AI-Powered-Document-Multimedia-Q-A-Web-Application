@@ -1,27 +1,64 @@
-# Testing Guide
+# InsightIQ: Developer Testing Guide
 
-This guide provides instructions on how to run and maintain tests for the InsightIQ application.
+This guide provides developers and evaluators with instructions on how to execute, monitor, and maintain the InsightIQ test suite.
 
-## 🚀 Quick Start
+---
 
-### Backend Tests
-```powershell
+## 🚀 Execution Commands
+
+### 🛡️ Backend (FastAPI)
+Ensure you have the virtual environment activated before running tests.
+
+**Run All Tests:**
+```bash
 cd backend
 python -m pytest tests/
 ```
 
-### Frontend Tests
-```powershell
+**Generate Coverage Report (Terminal):**
+```bash
+python -m pytest --cov=app --cov-report=term-missing tests/
+```
+
+**Generate Coverage Report (HTML):**
+```bash
+python -m pytest --cov=app --cov-report=html tests/
+# Open htmlcov/index.html in your browser
+```
+
+### 🎨 Frontend (Next.js)
+**Run All Tests:**
+```bash
 cd frontend
 npm test
 ```
 
-## 📋 Detailed Report
-For a full analysis of the testing architecture, coverage status, and implemented fixes (such as Windows path handling and database mocking), please refer to:
-[**TESTING_REPORT.md**](./TESTING_REPORT.md)
+**Generate Coverage Report:**
+```bash
+npm test -- --coverage
+```
 
-## 🛠 Troubleshooting
-If you encounter any issues with the testing environment, check the following:
-1. **Python Interpreter:** Ensure your IDE is using the `.venv` at the root.
-2. **Node Modules:** Run `npm install` in the `frontend` directory if Jest is not found.
-3. **Database:** Ensure no real MongoDB instance is required for tests; everything is mocked via `mongomock`.
+---
+
+## 🚦 Quality Gates (CI/CD)
+
+The project uses **GitHub Actions** to enforce quality. The pipeline located at `.github/workflows/test.yml` will automatically fail if:
+1. **Linting fails**: Code must adhere to PEP8 and ESLint standards.
+2. **Tests fail**: Any failing test case blocks the build.
+3. **Coverage drops**: Total backend and frontend coverage must be **95% or higher**.
+
+---
+
+## 🏗️ Core Testing Principles
+
+1. **Deterministic**: No real external API calls are made. Gemini, Redis, and MongoDB are fully mocked.
+2. **Isolated**: Each test case starts with a fresh, empty state.
+3. **Fast**: Backend unit tests execute in under 10 seconds.
+4. **Environment Agnostic**: Scripts are configured to run seamlessly on Windows, Linux, and macOS.
+
+---
+
+## 📖 Related Documents
+
+- [**TESTING_REPORT.md**](./TESTING_REPORT.md): Deep dive into the testing architecture and current coverage status.
+- [**API_DOCUMENTATION.md**](./API_DOCUMENTATION.md): Reference for all available endpoints.

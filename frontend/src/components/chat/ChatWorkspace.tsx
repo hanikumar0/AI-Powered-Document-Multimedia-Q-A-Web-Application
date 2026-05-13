@@ -15,15 +15,21 @@ import {
   X,
   Loader2,
   ChevronDown,
-  MessageSquare
+  MessageSquare,
+  Play
 } from 'lucide-react';
 import { fileService } from '@/services/fileService';
 import { useFileStore } from '@/store/fileStore';
 import { useChatStore } from '@/store/chatStore';
 import { chatService } from '@/services/chatService';
 import FileAttachmentModal from './FileAttachmentModal';
+import { useNavigationStore } from '@/store/navigationStore';
 
-export default function ChatWorkspace() {
+interface ChatWorkspaceProps {
+  compact?: boolean;
+}
+
+export default function ChatWorkspace({ compact }: ChatWorkspaceProps) {
   const [input, setInput] = useState('');
   const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -41,6 +47,7 @@ export default function ChatWorkspace() {
     attachFilesToActiveSession,
     fetchSessions
   } = useChatStore();
+  const { currentTime, requestedFileId, activeTab, requestSeek } = useNavigationStore();
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -72,6 +79,13 @@ export default function ChatWorkspace() {
     });
 
     let fullContent = '';
+    // Include playback context if in media mode or if a file is active
+    const mediaId = activeSession?.file_ids?.[0] || requestedFileId;
+    const playbackContext = (activeTab === 'media' || mediaId) ? {
+      current_time: currentTime,
+      media_id: mediaId
+    } : {};
+
     try {
       const result = await chatService.sendMessageStreaming(
         input, 
@@ -79,7 +93,8 @@ export default function ChatWorkspace() {
         (chunk) => {
           fullContent += chunk;
           updateMessage(assistantMessageIndex, fullContent);
-        }
+        },
+        playbackContext
       );
       
       // Update with final content and sources
@@ -97,6 +112,45 @@ export default function ChatWorkspace() {
       
       updateMessage(assistantMessageIndex, errorMessage);
     }
+  };
+  
+  const parseTimeToSeconds = (timestamp: string) => {
+    const clean = timestamp.replace(/[\[\]]/g, '');
+    const parts = clean.split(':').map(Number);
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return 0;
+  };
+
+  const renderContentWithTimestamps = (content: string) => {
+    const timestampRegex = /\[(\d{1,2}:)?\d{1,2}:\d{2}\]/g;
+    const parts = content.split(timestampRegex);
+    const matches = content.match(timestampRegex);
+
+    if (!matches) return <p className="text-sm leading-relaxed whitespace-pre-wrap">{content}</p>;
+
+    return (
+      <p className="text-sm leading-relaxed whitespace-pre-wrap">
+        {parts.map((part, i) => (
+          <span key={i}>
+            {part}
+            {matches[i] && (
+              <button 
+                onClick={() => {
+                  if (activeSession?.file_ids?.[0]) {
+                    requestSeek(activeSession.file_ids[0], parseTimeToSeconds(matches[i]));
+                  }
+                }}
+                className="mx-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-purple-500/10 text-purple-400 font-mono text-[11px] hover:bg-purple-500/30 transition-all border border-purple-500/20 group/ts active:scale-95 shadow-sm"
+              >
+                <Play className="w-3 h-3 fill-current opacity-60 group-hover/ts:opacity-100 transition-opacity" />
+                {matches[i]}
+              </button>
+            )}
+          </span>
+        ))}
+      </p>
+    );
   };
 
   const getAttachedFiles = () => {
@@ -128,40 +182,42 @@ export default function ChatWorkspace() {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0B0F19] relative overflow-hidden">
-      {/* Header */}
-      <div className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-[#0B0F19]/50 backdrop-blur-xl z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-purple-600/20 flex items-center justify-center border border-purple-500/20">
-            <FileText className="w-4 h-4 text-purple-500" />
+      {/* Header - Hide in compact mode */}
+      {!compact && (
+        <div className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-[#0B0F19]/50 backdrop-blur-xl z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-purple-600/20 flex items-center justify-center border border-purple-500/20">
+              <FileText className="w-4 h-4 text-purple-500" />
+            </div>
+            <h2 className="text-sm font-semibold text-white truncate max-w-[300px]">
+              {activeSession.title}
+            </h2>
           </div>
-          <h2 className="text-sm font-semibold text-white truncate max-w-[300px]">
-            {activeSession.title}
-          </h2>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex -space-x-2">
-            {attachedFiles.slice(0, 3).map((f, i) => (
-              <div key={i} className="w-6 h-6 rounded-full bg-[#1F2937] border-2 border-[#0B0F19] flex items-center justify-center" title={f.filename}>
-                <FileText className="w-3 h-3 text-purple-400" />
-              </div>
-            ))}
-            {attachedFiles.length > 3 && (
-              <div className="w-6 h-6 rounded-full bg-[#1F2937] border-2 border-[#0B0F19] flex items-center justify-center text-[8px] font-bold text-gray-400">
-                +{attachedFiles.length - 3}
-              </div>
-            )}
+          <div className="flex items-center gap-4">
+            <div className="flex -space-x-2">
+              {attachedFiles.slice(0, 3).map((f, i) => (
+                <div key={i} className="w-6 h-6 rounded-full bg-[#1F2937] border-2 border-[#0B0F19] flex items-center justify-center" title={f.filename}>
+                  <FileText className="w-3 h-3 text-purple-400" />
+                </div>
+              ))}
+              {attachedFiles.length > 3 && (
+                <div className="w-6 h-6 rounded-full bg-[#1F2937] border-2 border-[#0B0F19] flex items-center justify-center text-[8px] font-bold text-gray-400">
+                  +{attachedFiles.length - 3}
+                </div>
+              )}
+            </div>
+            <button 
+              onClick={() => setIsAttachmentModalOpen(true)}
+              className="text-xs font-bold uppercase tracking-widest text-purple-500 hover:text-purple-400 transition-colors"
+            >
+              Manage Files
+            </button>
           </div>
-          <button 
-            onClick={() => setIsAttachmentModalOpen(true)}
-            className="text-xs font-bold uppercase tracking-widest text-purple-500 hover:text-purple-400 transition-colors"
-          >
-            Manage Files
-          </button>
         </div>
-      </div>
+      )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+      <div className={`flex-1 overflow-y-auto ${compact ? 'p-4' : 'p-8'} space-y-8 custom-scrollbar`}>
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center space-y-8 py-20">
             <motion.div
@@ -209,12 +265,10 @@ export default function ChatWorkspace() {
                     ? 'bg-purple-600 text-white shadow-xl shadow-purple-500/10' 
                     : 'bg-[#1E293B] border border-white/5 text-gray-200'
                 }`}>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                    {msg.content}
-                    {msg.role === 'assistant' && i === messages.length - 1 && isLoading && (
-                      <span className="inline-block w-1.5 h-4 ml-1 bg-purple-500 animate-pulse align-middle" />
-                    )}
-                  </p>
+                  {renderContentWithTimestamps(msg.content)}
+                  {msg.role === 'assistant' && i === messages.length - 1 && isLoading && (
+                    <span className="inline-block w-1.5 h-4 ml-1 bg-purple-500 animate-pulse align-middle" />
+                  )}
                 </div>
                 
                 {msg.sources && msg.sources.length > 0 && (
@@ -253,7 +307,7 @@ export default function ChatWorkspace() {
       </div>
 
       {/* Input Area */}
-      <div className="p-8 pt-0">
+      <div className={`${compact ? 'p-4' : 'p-8'} pt-0`}>
         <div className="max-w-4xl mx-auto">
           {/* File Chips */}
           <AnimatePresence>

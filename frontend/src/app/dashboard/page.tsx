@@ -7,13 +7,60 @@ import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 import ChatWorkspace from '@/components/chat/ChatWorkspace';
 import FileUpload from '@/components/upload/FileUpload';
+import MediaViewer from '@/components/media/MediaViewer';
 import { useFileStore } from '@/store/fileStore';
 import { useChatStore } from '@/store/chatStore';
+import { useNavigationStore } from '@/store/navigationStore';
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const { files, fetchFiles, isLoading, setSelectedFile } = useFileStore();
+  const { activeTab, setActiveTab, requestedFileId } = useNavigationStore();
+  const { files, fetchFiles, isLoading, setSelectedFile, selectedFile } = useFileStore();
   const { createSession, attachFilesToActiveSession } = useChatStore();
+  const [transcript, setTranscript] = useState<any[]>([]);
+  
+  useEffect(() => {
+    let interval: any;
+    
+    const loadTranscript = async () => {
+      if (!selectedFile) return;
+      
+      try {
+        const res = await fetch(`http://localhost:8000/api/upload/${selectedFile.file_id}/transcript`);
+        const data = await res.json();
+        
+        if (data && data.length > 0) {
+          setTranscript(data);
+          if (interval) clearInterval(interval);
+        } else if (selectedFile.status !== 'failed') {
+          // Keep polling if empty but not failed
+          if (!interval) {
+            interval = setInterval(loadTranscript, 5000);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch transcript:", err);
+      }
+    };
+
+    if (selectedFile && (selectedFile.type.includes('audio') || selectedFile.type.includes('video'))) {
+      setTranscript([]); // Reset
+      loadTranscript();
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [selectedFile]);
+
+  // Sync selectedFile with requestedFileId (from chat timestamps)
+  useEffect(() => {
+    if (requestedFileId && (!selectedFile || selectedFile.file_id !== requestedFileId)) {
+      const file = files.find(f => f.file_id === requestedFileId);
+      if (file) {
+        setSelectedFile(file);
+      }
+    }
+  }, [requestedFileId, files, selectedFile, setSelectedFile]);
 
   useEffect(() => {
     fetchFiles();
@@ -27,26 +74,28 @@ export default function Dashboard() {
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
       
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header title={activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} />
+        {activeTab !== 'media' && <Header title={activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} />}
         
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className={`flex-1 overflow-y-auto ${activeTab === 'chats' || activeTab === 'media' ? 'p-0' : 'p-8'}`}>
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="max-w-6xl mx-auto"
+            className={`${activeTab === 'chats' || activeTab === 'media' ? 'max-w-full' : 'max-w-6xl'} mx-auto h-full flex flex-col`}
           >
-            <div className="flex justify-between items-center mb-10">
-              <div>
-                <h2 className="text-3xl font-bold mb-2">Welcome Back</h2>
-                <p className="text-gray-400">Manage your documents and multimedia insights.</p>
+            {activeTab === 'dashboard' && (
+              <div className="flex justify-between items-center mb-10">
+                <div>
+                  <h2 className="text-3xl font-bold mb-2">Welcome Back</h2>
+                  <p className="text-gray-400">Manage your documents and multimedia insights.</p>
+                </div>
+                <button 
+                  onClick={() => setActiveTab('files')}
+                  className="btn-primary flex items-center gap-2"
+                >
+                  <Plus className="w-5 h-5" /> New Upload
+                </button>
               </div>
-              <button 
-                onClick={() => setActiveTab('files')}
-                className="btn-primary flex items-center gap-2"
-              >
-                <Plus className="w-5 h-5" /> New Upload
-              </button>
-            </div>
+            )}
 
             {activeTab === 'dashboard' && (
               <div className="space-y-12">
@@ -93,16 +142,29 @@ export default function Dashboard() {
                               <p className="text-xs text-gray-500 uppercase tracking-widest">{file.status}</p>
                             </div>
                           </div>
-                          <button 
-                            onClick={async () => {
-                              const session = await createSession(file.filename);
-                              await attachFilesToActiveSession([file.file_id]);
-                              setActiveTab('chats');
-                            }}
-                            className="text-xs px-4 py-2 rounded-lg bg-[#1F2937] hover:bg-[#1F2937]/80 text-gray-400 hover:text-white transition-colors"
-                          >
-                            Open Chat
-                          </button>
+                          <div className="flex gap-2">
+                            {(file.type.includes('audio') || file.type.includes('video')) && (
+                              <button 
+                                onClick={() => {
+                                  setSelectedFile(file);
+                                  setActiveTab('media');
+                                }}
+                                className="text-xs px-4 py-2 rounded-lg bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 transition-colors flex items-center gap-2"
+                              >
+                                <PlayCircle className="w-4 h-4" /> Play
+                              </button>
+                            )}
+                            <button 
+                              onClick={async () => {
+                                const session = await createSession(file.filename);
+                                await attachFilesToActiveSession([file.file_id]);
+                                setActiveTab('chats');
+                              }}
+                              className="text-xs px-4 py-2 rounded-lg bg-[#1F2937] hover:bg-[#1F2937]/80 text-gray-400 hover:text-white transition-colors"
+                            >
+                              Open Chat
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -118,15 +180,30 @@ export default function Dashboard() {
             )}
 
             {activeTab === 'chats' && (
-              <div className="h-[700px] border border-[#1F2937] rounded-3xl overflow-hidden shadow-2xl">
+              <div className="flex-1 border-t border-[#1F2937] overflow-hidden flex flex-col bg-[#0B0F19]">
                 <ChatWorkspace />
               </div>
             )}
 
             {activeTab === 'media' && (
-              <div className="h-[700px] flex flex-col items-center justify-center text-gray-500">
-                <PlayCircle className="w-16 h-16 mb-4 opacity-20" />
-                <p>Select a multimedia file from the chat or files list to view.</p>
+              <div className="flex-1 min-h-[600px] flex flex-col bg-[#0B0F19]">
+                {selectedFile ? (
+                  <MediaViewer 
+                    fileUrl={(() => {
+                      const ext = selectedFile.extension || selectedFile.filename.substring(selectedFile.filename.lastIndexOf('.'));
+                      return `http://localhost:8000/uploads/${selectedFile.file_id}${ext}`;
+                    })()}
+                    type={selectedFile.type.includes('video') ? 'video' : 'audio'}
+                    transcript={transcript}
+                    status={selectedFile.status}
+                    fileId={selectedFile.file_id}
+                  />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
+                    <PlayCircle className="w-16 h-16 mb-4 opacity-20" />
+                    <p>Select a multimedia file from the chat or files list to view.</p>
+                  </div>
+                )}
               </div>
             )}
           </motion.div>

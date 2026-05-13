@@ -1,7 +1,7 @@
-from google import genai
-import time
-import os
+import hashlib
+import asyncio
 from .gemini_client import gemini_client
+from ..services.cache_service import cache_service
 
 class TranscriptionService:
     def __init__(self):
@@ -9,34 +9,68 @@ class TranscriptionService:
 
     async def transcribe_media(self, file_path: str):
         """
-        Transcribes audio/video files using Gemini 2.0 Flash multimodal capabilities.
+        Transcribes audio/video files using Gemini with Redis caching.
         """
         try:
-            # 1. Upload to Gemini File API
+            # 1. Generate file hash for caching
+            with open(file_path, "rb") as f:
+                file_hash = hashlib.md5(f.read()).hexdigest()
+            
+            cache_key = f"transcription:{file_hash}"
+            cached = await cache_service.get(cache_key)
+            if cached:
+                print(f"Transcription cache hit for {file_path}")
+                return cached
+
+            # 2. Upload to Gemini File API
             print(f"Uploading {file_path} to Gemini File API...")
             uploaded_file = self.client.files.upload(path=file_path)
             
-            # 2. Wait for processing (the new SDK handles some of this, but checking state is safer)
-            # In google-genai, we check state via uploaded_file.state
             while uploaded_file.state == "PROCESSING":
                 print("Waiting for file processing...")
-                time.sleep(2)
+                await asyncio.sleep(2)
                 uploaded_file = self.client.files.get(name=uploaded_file.name)
 
             if uploaded_file.state == "FAILED":
                 raise ValueError("Gemini file processing failed")
 
-            # 3. Generate transcript
-            prompt = "Transcribe this file exactly. Provide the output in a clean text format with segments and timestamps if possible."
+            # 3. Generate transcript with structured timestamps
+            prompt = """
+            Transcribe this media file. Provide the output strictly as a JSON list of segments.
+            Each segment MUST have:
+            - "start": start time in seconds (float)
+            - "end": end time in seconds (float)
+            - "text": the transcribed text for this segment
+            - "timestamp_label": a string like "[02:15]" representing the start time.
+            
+            Example: [{"start": 10.5, "end": 15.0, "text": "Hello world", "timestamp_label": "[00:10]"}]
+            Return ONLY the JSON.
+            """
             response = self.client.models.generate_content(
-                model="models/gemini-3-flash-preview",
+                model="models/gemini-2.0-flash", # Using 2.0 Flash for better JSON adherence
                 contents=[uploaded_file, prompt]
             )
             
-            # 4. Cleanup
+            # Extract JSON from potential markdown code blocks
+            text = response.text
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0].strip()
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0].strip()
+            
+            transcript = text.strip()
+            
+            # 4. Final Validation: Ensure we don't return empty strings if possible
+            if not transcript and response.text:
+                transcript = response.text.strip()
+                
+            # 5. Cache and Cleanup
+            if transcript:
+                await cache_service.set(cache_key, transcript, expire=86400 * 30) # 30 days
+            
             self.client.files.delete(name=uploaded_file.name)
             
-            return response.text
+            return transcript
         except Exception as e:
             print(f"Transcription error: {e}")
             raise e

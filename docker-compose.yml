@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # FastAPI Backend Service
   backend:
     build: ./backend
     ports:
@@ -9,12 +10,17 @@ services:
       - ./backend:/app
       - ./uploads:/app/uploads
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - MONGO_URL=mongodb://mongodb:27017
       - DB_NAME=ai_multimedia_qa
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
+  # Next.js Frontend Service
   frontend:
     build: ./frontend
     ports:
@@ -27,6 +33,7 @@ services:
     depends_on:
       - backend
 
+  # MongoDB Database Service
   mongodb:
     image: mongo:latest
     ports:
@@ -34,5 +41,19 @@ services:
     volumes:
       - mongodb_data:/data/db
 
+  # Redis Cache & Rate Limiting Service
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
 volumes:
   mongodb_data:
+  redis_data:

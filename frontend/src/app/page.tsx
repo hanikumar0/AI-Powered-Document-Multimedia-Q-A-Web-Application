@@ -12,7 +12,7 @@ export default function LandingPage() {
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-cyan-600/10 rounded-full blur-[120px]" />
 
       {/* Navbar */}
-      <nav className="absolute top-0 left-0 w-full z-20 px-8 py-6 flex items-center justify-between max-w-7xl mx-auto left-1/2 -translate-x-1/2">
+      <nav className="absolute top-0 w-full z-20 px-8 py-6 flex items-center justify-between max-w-7xl">
         <div className="flex items-center gap-2">
           <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-cyan-500 rounded-xl flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-purple-500/20">
             I
@@ -36,10 +36,10 @@ export default function LandingPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          <h1 className="text-6xl md:text-8xl font-bold tracking-tight mb-6">
+          <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-8">
             Understand <span className="gradient-text">Everything</span>
           </h1>
-          <p className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto leading-relaxed">
+          <p className="text-lg md:text-xl text-gray-400 mb-10 max-w-2xl mx-auto leading-relaxed">
             The AI-powered workspace for documents, meetings, and lectures. 
             Chat with your PDFs, audio, and video files in one place.
           </p>

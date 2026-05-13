@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from fastapi.responses import StreamingResponse
+from fastapi_limiter.depends import RateLimiter
 import json
 from pydantic import BaseModel
 from typing import List, Optional
@@ -9,7 +10,23 @@ from ..rag.vector_store import vector_store
 from ..db.mongodb import get_database
 from ..ai.chat_service import chat_service
 
+from ..services.cache_service import cache_service
+
 router = APIRouter(tags=["Chat"])
+
+async def get_limiter(request: Request, response: Response):
+    """Dependency that only executes RateLimiter if Redis is connected."""
+    if cache_service.redis:
+        limiter = RateLimiter(times=10, seconds=60)
+        return await limiter(request, response)
+    return None
+
+def rate_limit():
+    """Returns a list of dependencies for rate limiting, or empty if no Redis."""
+    if cache_service.redis:
+        return [Depends(RateLimiter(times=10, seconds=60))]
+    return []
+
 
 # --- Models ---
 
@@ -29,6 +46,8 @@ class ChatSession(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     session_id: str
+    current_time: Optional[float] = None
+    media_id: Optional[str] = None
 
 class SessionCreate(BaseModel):
     title: str = "New Conversation"
@@ -80,7 +99,7 @@ async def attach_files(session_id: str, request: FileAttachRequest):
     return {"status": "success"}
 
 @router.post("/message")
-async def send_message(request: ChatRequest):
+async def send_message(request: ChatRequest, _ = Depends(get_limiter)):
     db = get_database()
     session = await db.chat_sessions.find_one({"_id": request.session_id})
     if not session:
@@ -96,7 +115,7 @@ async def send_message(request: ChatRequest):
             print(f"Meta-query detected: {request.message}. Fetching all file content.")
             results = vector_store.get_all_content_for_files(file_ids)
         else:
-            results = vector_store.search(request.message, k=5, file_ids=file_ids)
+            results = await vector_store.search(request.message, k=5, file_ids=file_ids)
         
         # 2. Get attached file names for prompt context
         attached_file_names = []
@@ -194,7 +213,7 @@ async def send_message(request: ChatRequest):
         raise HTTPException(status_code=500, detail=f"AI Error: {error_msg}")
 
 @router.post("/message/stream")
-async def send_message_stream(request: ChatRequest):
+async def send_message_stream(request: ChatRequest, _ = Depends(get_limiter)):
     db = get_database()
     session = await db.chat_sessions.find_one({"_id": request.session_id})
     if not session:
@@ -209,11 +228,27 @@ async def send_message_stream(request: ChatRequest):
         
         try:
             # 1. Search vector store
+            results = []
+            
+            # Timeline-Aware Retrieval: If watching a specific time, get nearby chunks first
+            if request.current_time is not None and request.media_id:
+                results = vector_store.get_context_around_time(request.media_id, request.current_time)
+                print(f"Retrieved {len(results)} chunks around timestamp {request.current_time}")
+
+            # Semantic Search: Supplement with relevant chunks from all attached files
             meta_keywords = ["folder", "file", "inside", "detail", "summary", "all", "this", "these"]
+            semantic_results = []
             if file_ids and any(kw in request.message.lower() for kw in meta_keywords):
-                results = vector_store.get_all_content_for_files(file_ids)
+                semantic_results = vector_store.get_all_content_for_files(file_ids)
             else:
-                results = vector_store.search(request.message, k=5, file_ids=file_ids)
+                semantic_results = await vector_store.search(request.message, k=5, file_ids=file_ids)
+            
+            # Merge and avoid duplicates
+            seen_texts = {r["metadata"]["text"] for r in results}
+            for sr in semantic_results:
+                if sr["metadata"]["text"] not in seen_texts:
+                    results.append(sr)
+                    seen_texts.add(sr["metadata"]["text"])
             
             # 2. Get attached file names
             attached_file_names = []
@@ -236,9 +271,12 @@ async def send_message_stream(request: ChatRequest):
                     sources.append(meta)
 
             # 5. Start Stream
-            async for chunk in chat_service.generate_response_stream(
+            async for chunk in chat_service.generate_streaming_response(
                 request.message, 
-                context, 
+                request.session_id,
+                current_time=request.current_time,
+                media_id=request.media_id,
+                context=context, 
                 attached_files=attached_file_names, 
                 history=formatted_history
             ):

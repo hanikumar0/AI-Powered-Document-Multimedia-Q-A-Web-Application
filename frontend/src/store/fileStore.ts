@@ -7,6 +7,7 @@ interface FileData {
   filename: string;
   type: string;
   status: 'uploaded' | 'processed' | 'failed';
+  extension?: string;
 }
 
 interface FileState {

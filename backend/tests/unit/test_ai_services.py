@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from app.ai.embedding_service import EmbeddingService
 from app.ai.gemini_client import GeminiClient
 
@@ -35,7 +35,8 @@ async def test_extract_text_with_gemini_success(mock_genai_client):
         text = await client.extract_text_with_gemini("path.pdf", "application/pdf")
         assert text == "Extracted text"
 
-def test_embedding_service_success(mock_genai_client):
+@pytest.mark.asyncio
+async def test_embedding_service_success(mock_genai_client):
     mock_emb = MagicMock()
     mock_emb.values = [0.1, 0.2]
     mock_response = MagicMock()
@@ -43,20 +44,25 @@ def test_embedding_service_success(mock_genai_client):
     mock_genai_client.models.embed_content.return_value = mock_response
     
     with patch("app.ai.embedding_service.gemini_client.get_client", return_value=mock_genai_client):
-        service = EmbeddingService()
-        res = service.get_embeddings(["test"])
-        assert len(res) == 1
-        assert res[0] == [0.1, 0.2]
+        with patch("app.ai.embedding_service.cache_service.get", return_value=None):
+            with patch("app.ai.embedding_service.cache_service.set", new_callable=AsyncMock):
+                service = EmbeddingService()
+                res = await service.get_embeddings(["test"])
+                assert len(res) == 1
+                assert res[0] == [0.1, 0.2]
 
-def test_embedding_service_error(mock_genai_client):
+@pytest.mark.asyncio
+async def test_embedding_service_error(mock_genai_client):
     mock_genai_client.models.embed_content.side_effect = Exception("Fail")
     
     with patch("app.ai.embedding_service.gemini_client.get_client", return_value=mock_genai_client):
-        service = EmbeddingService()
-        res = service.get_embeddings(["test"])
-        assert res == []
+        with patch("app.ai.embedding_service.cache_service.get", return_value=None):
+            service = EmbeddingService()
+            res = await service.get_embeddings(["test"])
+            assert res == []
 
-def test_query_embedding_success(mock_genai_client):
+@pytest.mark.asyncio
+async def test_query_embedding_success(mock_genai_client):
     mock_emb = MagicMock()
     mock_emb.values = [0.5, 0.6]
     mock_response = MagicMock()
@@ -64,6 +70,8 @@ def test_query_embedding_success(mock_genai_client):
     mock_genai_client.models.embed_content.return_value = mock_response
     
     with patch("app.ai.embedding_service.gemini_client.get_client", return_value=mock_genai_client):
-        service = EmbeddingService()
-        res = service.get_query_embedding("query")
-        assert res == [0.5, 0.6]
+        with patch("app.ai.embedding_service.cache_service.get", return_value=None):
+            with patch("app.ai.embedding_service.cache_service.set", new_callable=AsyncMock):
+                service = EmbeddingService()
+                res = await service.get_query_embedding("query")
+                assert res == [0.5, 0.6]

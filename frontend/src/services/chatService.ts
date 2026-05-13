@@ -57,7 +57,7 @@ export const chatService = {
     return response.data;
   },
 
-  async sendMessageStreaming(message: string, sessionId: string, onChunk: (chunk: string) => void) {
+  async sendMessageStreaming(message: string, sessionId: string, onChunk: (chunk: string) => void, context: any = {}) {
     const token = Cookies.get('auth-token');
     
     const response = await fetch(`${API_URL}/chat/message/stream`, {
@@ -66,7 +66,11 @@ export const chatService = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ message, session_id: sessionId })
+      body: JSON.stringify({ 
+        message, 
+        session_id: sessionId,
+        ...context
+      })
     });
 
     if (!response.ok) {
