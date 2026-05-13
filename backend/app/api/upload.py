@@ -65,15 +65,18 @@ async def get_transcript(file_id: str):
             file_hash = hashlib.md5(f.read()).hexdigest()
     
     cache_key = f"transcription:{file_hash}"
-    transcript_raw = await cache_service.get(cache_key)
+    transcript_data = await cache_service.get(cache_key)
     
-    if not transcript_raw:
+    if not transcript_data:
         return []
         
-    try:
-        return json.loads(transcript_raw)
-    except:
-        return []
+    if isinstance(transcript_data, str):
+        try:
+            return json.loads(transcript_data)
+        except:
+            return []
+            
+    return transcript_data
 
 @router.post("/")
 async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
@@ -134,10 +137,10 @@ async def process_file(file_id: str, file_path: str, filename: str, content_type
                             "text": chunk
                         })
         elif "audio" in content_type or "video" in content_type:
-            transcript_raw = await transcription_service.transcribe_media(file_path)
-            if transcript_raw:
+            transcript_data = await transcription_service.transcribe_media(file_path)
+            if transcript_data:
                 try:
-                    segments = json.loads(transcript_raw)
+                    segments = transcript_data if isinstance(transcript_data, list) else json.loads(transcript_data)
                     for segment in segments:
                         text = segment.get("text", "")
                         start_time = segment.get("start", 0)

@@ -1,7 +1,9 @@
 import axios from 'axios';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const API_URL = BASE_URL.endsWith('/api') ? BASE_URL : `${BASE_URL}/api`;
+import { apiConfig } from './apiConfig';
+
+const API_URL = apiConfig.API_URL;
+
 
 const authApi = axios.create({
   baseURL: API_URL,

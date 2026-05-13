@@ -58,19 +58,27 @@ class TranscriptionService:
             elif "```" in text:
                 text = text.split("```")[1].split("```")[0].strip()
             
-            transcript = text.strip()
+            transcript_str = text.strip()
+            transcript_data = []
             
             # 4. Final Validation: Ensure we don't return empty strings if possible
-            if not transcript and response.text:
-                transcript = response.text.strip()
-                
+            if transcript_str:
+                try:
+                    transcript_data = json.loads(transcript_str)
+                except Exception as je:
+                    print(f"Failed to parse transcript JSON: {je}")
+                    # Fallback or keep empty
+            
             # 5. Cache and Cleanup
-            if transcript:
-                await cache_service.set(cache_key, transcript, expire=86400 * 30) # 30 days
+            if transcript_data:
+                await cache_service.set(cache_key, transcript_data, expire=86400 * 30) # 30 days
             
-            self.client.files.delete(name=uploaded_file.name)
+            try:
+                self.client.files.delete(name=uploaded_file.name)
+            except:
+                pass
             
-            return transcript
+            return transcript_data
         except Exception as e:
             print(f"Transcription error: {e}")
             raise e

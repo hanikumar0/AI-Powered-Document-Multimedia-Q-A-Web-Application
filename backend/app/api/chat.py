@@ -63,8 +63,9 @@ async def get_sessions():
     sessions = await db.chat_sessions.find().sort("updated_at", -1).to_list(100)
     # Convert _id to id for frontend
     for s in sessions:
-        s["id"] = s.pop("_id")
+        s["id"] = str(s.pop("_id"))
     return sessions
+
 
 @router.post("/sessions")
 async def create_session(request: SessionCreate):
@@ -78,8 +79,9 @@ async def create_session(request: SessionCreate):
         "file_ids": []
     }
     await db.chat_sessions.insert_one(session)
-    session["id"] = session.pop("_id")
+    session["id"] = str(session.pop("_id"))
     return session
+
 
 @router.get("/sessions/{session_id}/messages")
 async def get_messages(session_id: str):

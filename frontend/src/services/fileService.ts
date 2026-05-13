@@ -1,8 +1,10 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const API_URL = BASE_URL.endsWith('/api') ? BASE_URL : `${BASE_URL}/api`;
+import { apiConfig } from './apiConfig';
+
+const API_URL = apiConfig.API_URL;
+
 
 const getAuthHeader = () => {
   const token = Cookies.get('auth-token');

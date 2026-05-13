@@ -11,6 +11,8 @@ import MediaViewer from '@/components/media/MediaViewer';
 import { useFileStore } from '@/store/fileStore';
 import { useChatStore } from '@/store/chatStore';
 import { useNavigationStore } from '@/store/navigationStore';
+import { apiConfig } from '@/services/apiConfig';
+
 
 export default function Dashboard() {
   const { activeTab, setActiveTab, requestedFileId } = useNavigationStore();
@@ -25,8 +27,12 @@ export default function Dashboard() {
       if (!selectedFile) return;
       
       try {
-        const res = await fetch(`http://localhost:8000/api/upload/${selectedFile.file_id}/transcript`);
+        const res = await fetch(`${apiConfig.API_URL}/upload/${selectedFile.file_id}/transcript`);
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
         const data = await res.json();
+
         
         if (data && data.length > 0) {
           setTranscript(data);
@@ -191,8 +197,9 @@ export default function Dashboard() {
                   <MediaViewer 
                     fileUrl={(() => {
                       const ext = selectedFile.extension || selectedFile.filename.substring(selectedFile.filename.lastIndexOf('.'));
-                      return `http://localhost:8000/uploads/${selectedFile.file_id}${ext}`;
+                      return `${apiConfig.UPLOADS_URL}/${selectedFile.file_id}${ext}`;
                     })()}
+
                     type={selectedFile.type.includes('video') ? 'video' : 'audio'}
                     transcript={transcript}
                     status={selectedFile.status}
