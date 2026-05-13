@@ -1,21 +1,38 @@
 # InsightIQ: AI-Powered Document & Multimedia Intelligence
 
-InsightIQ is a production-grade, full-stack AI platform that enables users to interact with PDFs, audio, and video files through a real-time conversational interface. Leveraging the power of **Google Gemini**, the application provides deep content analysis, automatic transcription, and semantic retrieval with high-fidelity citations.
+[![Walkthrough Video](https://img.shields.io/badge/Watch-Walkthrough%20Video-red?style=for-the-badge&logo=google-drive)](https://drive.google.com/file/d/1UyiULzrhFa_W0srPVUdxiNGmIiwwgsCD/view?usp=sharing)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-blue?style=for-the-badge&logo=github)](https://github.com/hanikumar0/AI-Powered-Document-Multimedia-Q-A-Web-Application.git)
+
+InsightIQ is a production-grade, full-stack AI platform that enables users to interact with PDFs, audio, and video files through a real-time conversational interface. Leveraging the power of **Google Gemini 2.0 Flash**, the application provides deep content analysis, automatic transcription, and semantic retrieval with high-fidelity citations.
+
+---
+
+---
+
+## 📽️ Demo & Walkthrough
+
+Experience InsightIQ in action! The following walkthrough demonstrates:
+1. **Seamless PDF Interaction**: Asking deep technical questions about research papers.
+2. **Video Intelligence**: Chatting with a video recording while it plays, with the AI identifying specific timestamps.
+3. **Real-time Streaming**: Showing the fluid, instant response generation.
+
+[**Watch the Full Walkthrough Here**](https://drive.google.com/file/d/1UyiULzrhFa_W0srPVUdxiNGmIiwwgsCD/view?usp=sharing)
 
 ---
 
 ## 🚀 Key Features
 
-- **Real-Time AI Streaming**: Experience token-by-token responses for a fluid, ChatGPT-like interaction.
+- **Real-Time AI Streaming**: Experience token-by-token responses for a fluid, ChatGPT-like interaction using Server-Sent Events (SSE).
 - **Multimodal Intelligence**: 
-  - **PDF Analysis**: Context-aware Q&A with precise page citations.
-  - **Multimedia Transcription**: Automatic processing of audio and video files with segment-level retrieval.
-- **Advanced RAG Engine**: Semantic search powered by **FAISS** and **Gemini Embeddings** for grounding AI responses in your data.
+  - **PDF Analysis**: Context-aware Q&A with precise page citations and semantic grounding.
+  - **Multimedia Transcription**: Automatic high-fidelity transcription of audio and video files with segment-level retrieval.
+  - **Timeline-Aware Chat**: Direct synchronization with media playback—ask about specific video moments.
+- **Advanced RAG Engine**: Semantic search powered by **FAISS** (Facebook AI Similarity Search) and **Gemini Embeddings** for zero-hallucination responses.
 - **High-Performance Infrastructure**:
-  - **Redis Caching**: Intelligent caching for embeddings and transcriptions to optimize costs and performance.
-  - **API Rate Limiting**: Secure per-user request throttling to prevent abuse.
-- **Production-Ready UI**: A premium, responsive interface built with **Next.js 15**, **Tailwind CSS**, and **Framer Motion**.
-- **Robust Quality Assurance**: Mandatory **95%+ test coverage** enforced via CI/CD.
+  - **Redis Caching**: Intelligent layer caching for embeddings and transcriptions to drastically reduce API latency and costs.
+  - **API Rate Limiting**: Production-grade security using `FastAPILimiter` to prevent system abuse.
+- **Production-Ready UI**: A premium, dark-mode dashboard built with **Next.js 15**, **Tailwind CSS**, and **Framer Motion** for a sleek, responsive feel.
+- **Robust Quality Assurance**: Mandatory **95%+ test coverage** enforced via automated CI/CD pipelines.
 
 ---
 
@@ -40,6 +57,48 @@ InsightIQ is a production-grade, full-stack AI platform that enables users to in
 ## 🏗️ Architecture
 
 InsightIQ follows a modern Retrieval-Augmented Generation (RAG) architecture:
+
+```mermaid
+graph TD
+    subgraph "Frontend (Next.js 15)"
+        UI[User Interface]
+        SSE[SSE Stream Handler]
+    end
+
+    subgraph "Backend (FastAPI)"
+        API[API Endpoints]
+        PROC[File Processor]
+        TRANS[Gemini Transcription]
+        CHUNK[Text Chunker]
+    end
+
+    subgraph "AI & Vector Layer"
+        GEM_GEN[Gemini 2.0 Flash]
+        GEM_EMB[Gemini Embeddings]
+        FAISS[(FAISS Vector Store)]
+    end
+
+    subgraph "Data & Cache"
+        DB[(MongoDB)]
+        REDIS[(Redis Cache)]
+    end
+
+    UI -->|Upload File| API
+    API --> PROC
+    PROC -->|Media| TRANS
+    PROC -->|PDF| CHUNK
+    TRANS --> CHUNK
+    CHUNK --> GEM_EMB
+    GEM_EMB --> FAISS
+    
+    UI -->|Query| API
+    API -->|Search| FAISS
+    FAISS -->|Context| GEM_GEN
+    API -->|Fetch| DB
+    API -->|Cache Check| REDIS
+    GEM_GEN -->|Stream Response| SSE
+    SSE --> UI
+```
 
 1. **Ingestion**: Files are processed (PDF OCR or Media Transcription) and chunked.
 2. **Indexing**: Chunks are converted to embeddings via Gemini and stored in FAISS.
